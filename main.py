@@ -3,9 +3,12 @@
 
 使用方法:
     python main.py run              # 运行系统流水线（全部126个用例）
-    python main.py run --index 1    # 只运行第1个用例
-    python main.py stats            # 查看实验结果统计
-    python main.py init             # 检查项目配置
+    python main.py run --index 1         # 只运行第1个用例
+    python main.py run --attempts 5       # 每个用例跑5次,计算PASS@1/3/5
+    python main.py run -p 10 --attempts 3 # 并行10,每个用例3次
+    python main.py run --prompt-type v2   # 使用v2类型提示词
+    python main.py stats                 # 查看实验结果统计
+    python main.py init                  # 检查项目配置
 """
 
 from __future__ import annotations
@@ -14,7 +17,6 @@ import argparse
 import asyncio
 from datetime import datetime
 import json
-import time
 
 
 def main() -> None:
@@ -35,6 +37,14 @@ def main() -> None:
     run_parser.add_argument(
         "-p", "--parallel", type=int, default=10,
         help="并行处理数（默认10）",
+    )
+    run_parser.add_argument(
+        "--attempts", type=int, default=5,
+        help="每个用例重复尝试次数，用于计算PASS@K（默认5）",
+    )
+    run_parser.add_argument(
+        "--prompt-type", type=str, default="default",
+        help="提示词类型（默认default，对应 templates/ 目录）",
     )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
@@ -61,12 +71,17 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     from pipeline.graph import compile_pipeline
 
     parallel = args.parallel or 1
+    attempts = args.attempts or 1
+    prompt_type = args.prompt_type or "default"
 
     print("=" * 60)
     print("  CodeV 系统流水线")
     print("  多LLM智能体集成的IAM策略形式化验证")
     if parallel > 1:
         print(f"  并行数: {parallel}")
+    if attempts > 1:
+        print(f"  尝试次数: {attempts}（用于PASS@1/3/5统计）")
+    print(f"  提示词:    {prompt_type}")
     print("=" * 60)
 
     input_module = InputModule(settings.data_dir)
@@ -86,16 +101,30 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     else:
         indices = list(range(len(pairs)))
         total = len(pairs)
-        print(f"运行全部 {total} 个用例\n")
+        print(f"运行全部 {total} 个用例", end="")
+        if attempts > 1:
+            print(f"，总计 {total * attempts} 条记录", end="")
+        print("\n")
 
-    async def process_one(idx: int) -> dict:
+    # 保存本次实验的运行参数
+    recorder.save_run_config(run_id, {
+        "prompt_type": prompt_type,
+        "model_used": settings.model_name,
+        "parallel": parallel,
+        "attempts": attempts,
+        "max_iterations": settings.max_iterations,
+        "max_syntax_retries": settings.max_syntax_retries,
+        "total_cases": total,
+    })
+
+    async def process_one(idx: int, attempt_num: int) -> dict:
         """处理单个用例，返回该用例的结果摘要"""
         case = pairs[idx]
         label = answers[idx] if idx < len(answers) else None
         case_num = idx + 1
 
         # 每条数据创建全新的3个Agent，实验结束后销毁
-        case_pipeline = compile_pipeline()
+        case_pipeline = compile_pipeline(prompt_type=prompt_type)
 
         record = ExperimentRecord(
             instruct_id=case.instruct_id,
@@ -104,6 +133,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             account_data=case.account_data,
             model_used=settings.model_name,
             run_id=run_id,
+            attempt_number=attempt_num,
         )
 
         initial_state = {
@@ -126,16 +156,18 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             "extras": {},
         }
 
-        case_start = time.perf_counter()
         result = {"idx": idx, "success": False, "aligned": False, "error": False}
 
         try:
             final_state = await case_pipeline.ainvoke(initial_state)
-            elapsed_ms = (time.perf_counter() - case_start) * 1000
+            extras = final_state.get("extras", {})
+            gen_start = extras.get("gen_start_time")
+            gen_end = extras.get("gen_end_time")
+            elapsed_ms = ((gen_end - gen_start) * 1000) if gen_start and gen_end else 0.0
             error_msg = final_state.get("error_message")
 
             if error_msg:
-                print(f"  [{case_num}/{total}] {case.instruct_id} [!] {error_msg}")
+                print(f"  [A{attempt_num}/{case_num}/{total}] {case.instruct_id} [!] {error_msg}")
                 record.status = "error"
                 record.error_message = error_msg
                 result["error"] = True
@@ -192,19 +224,19 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                     label_match = z3_has_permission == label
                     match_str = " ✓" if label_match else " ✗"
                     match_str += f" (Z3={z3_output}, label={label})"
-                print(f"  [{case_num}/{total}] {case.instruct_id}: {status} "
+                print(f"  [A{attempt_num}/{case_num}/{total}] {case.instruct_id}: {status} "
                       f"({iters}次迭代{match_str}, {elapsed_ms:.0f}ms)")
 
             record.total_time_ms = elapsed_ms
 
         except Exception as e:
-            elapsed_ms = (time.perf_counter() - case_start) * 1000
+            elapsed_ms = 0.0
             record.status = "error"
             record.error_message = str(e)
             record.total_time_ms = elapsed_ms
             result["error"] = True
             result["success"] = False
-            print(f"  [{case_num}/{total}] {case.instruct_id} [!!] {e}")
+            print(f"  [A{attempt_num}/{case_num}/{total}] {case.instruct_id} [!!] {e}")
 
         try:
             recorder.save_experiment(record)
@@ -213,46 +245,63 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         return result
 
-    if parallel > 1 and total > 1:
-        # 分批处理
-        batch_size = (total + parallel - 1) // parallel
-        batches = [indices[i:i + batch_size] for i in range(0, total, batch_size)]
-        print(f"  分批: {len(batches)} 批, 每批 ~{batch_size} 条\n")
+    for attempt_num in range(1, attempts + 1):
+        if attempts > 1:
+            print(f"── 第 {attempt_num}/{attempts} 次尝试 ──")
+        if parallel > 1 and total > 1:
+            batch_size = (total + parallel - 1) // parallel
+            batches = [indices[i:i + batch_size] for i in range(0, total, batch_size)]
+            if attempt_num == 1:
+                print(f"  分批: {len(batches)} 批, 每批 ~{batch_size} 条\n")
 
-        async def run_batch(batch: list[int]) -> list[dict]:
-            return [await process_one(idx) for idx in batch]
+            async def run_batch(batch: list[int]) -> list[dict]:
+                return [await process_one(idx, attempt_num) for idx in batch]
 
-        batch_results_lists = await asyncio.gather(*[run_batch(b) for b in batches])
-        # 扁平化结果
-        all_results = [r for blist in batch_results_lists for r in blist]
-    else:
-        all_results = [await process_one(idx) for idx in indices]
+            batch_results_lists = await asyncio.gather(*[run_batch(b) for b in batches])
+            all_results = [r for blist in batch_results_lists for r in blist]
+        else:
+            all_results = [await process_one(idx, attempt_num) for idx in indices]
 
-    # 汇总 — 从数据库读取该次实验的完整统计
-    stats = recorder.get_summary_stats(run_id=run_id)
+        if attempts > 1:
+            a_stats = recorder.get_summary_stats(run_id=run_id)
+            a_total = a_stats.get("total", 0)
+            a_success = a_stats.get("success_count", 0)
+            a_errors = a_stats.get("error_count", 0)
+            print(f"  ─ 本轮累计: {a_total} 条, 成功 {a_success}, 错误 {a_errors}")
+            la = a_stats.get("label_accuracy")
+            if la is not None:
+                print(f"  ─ 当前准确率: {la:.2%}")
+
+    # PASS@K 统计
+    pass_stats = recorder.get_pass_at_k_stats(run_id=run_id)
 
     print(f"\n{'=' * 60}")
     print(f"  运行完成  实验编号: {run_id}")
     print(f"{'=' * 60}")
-    print(f"  总用例:     {stats.get('total', 0)}")
-    print(f"  成功:       {stats.get('success_count', 0)}")
-    print(f"  错误:       {stats.get('error_count', 0)}")
+
+    if attempts > 1:
+        total_cases = pass_stats.get("total_cases", 0)
+        print(f"  总记录数:   {total_cases * attempts} ({total_cases} 用例 × {attempts} 次)")
+
     print(f"  {'─' * 47}")
-    csr = stats.get('constraint_satisfaction_rate')
-    if csr is not None:
-        asc = stats.get('all_satisfied_count', 0)
-        print(f"  全部约束满足: {asc} 例")
-        print(f"  约束满足率:   {csr:.2%}")
+
+    for k in [1, 3, 5]:
+        pk = pass_stats.get(f"pass_at_{k}")
+        if pk is not None:
+            pk_count = pass_stats.get(f"pass_at_{k}_count", 0)
+            pk_total = pass_stats.get("total_cases", 0)
+            print(f"  PASS@{k}:       {pk:.2%} ({pk_count}/{pk_total})")
+
     print(f"  {'─' * 47}")
-    la = stats.get('label_accuracy')
-    if la is not None:
-        lmc = stats.get('label_match_count', 0)
-        ltc = stats.get('label_total_count', 0)
-        print(f"  标签匹配:     {lmc}/{ltc}")
-        print(f"  标签准确率:   {la:.2%}")
+
+    for k in [1, 3, 5]:
+        cpk = pass_stats.get(f"constraint_pass_at_{k}")
+        if cpk is not None:
+            cpk_count = pass_stats.get(f"constraint_pass_at_{k}_count", 0)
+            cpk_total = pass_stats.get("total_cases", 0)
+            print(f"  约束PASS@{k}: {cpk:.2%} ({cpk_count}/{cpk_total})")
+
     print(f"  {'─' * 47}")
-    print(f"  平均耗时:     {stats.get('avg_time_ms', 0):.0f}ms")
-    print(f"  平均迭代:     {stats.get('avg_iterations', 0):.1f}")
     print(f"  数据库:       {settings.db_path}")
     print(f"{'=' * 60}")
 
@@ -325,11 +374,20 @@ def init_project() -> None:
         print(f"  [!] 数据目录不存在: {settings.data_dir}")
 
     print(f"\n[Prompt]")
-    pm = PromptManager()
-    templates = pm.list_templates()
-    print(f"  模板文件: {len(templates)} 个")
-    for t in templates:
-        print(f"    - {t}")
+    print(f"  当前类型:  {settings.prompt_type}")
+    # 列出所有可用类型
+    from pathlib import Path as _Path
+    templates_root = _Path(__file__).parent / "prompt" / "templates"
+    types = ["default"]
+    for d in templates_root.iterdir():
+        if d.is_dir() and not d.name.startswith("."):
+            types.append(d.name)
+    for pt in types:
+        pm = PromptManager(prompt_type=pt)
+        templates = pm.list_templates()
+        print(f"  [{pt}] {len(templates)} 个模板")
+        for t in templates:
+            print(f"    - {t}")
 
     print(f"\n[依赖]")
     try:

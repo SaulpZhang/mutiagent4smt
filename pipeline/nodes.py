@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from config import settings
@@ -15,11 +16,11 @@ from prompt.manager import PromptManager
 class PipelineNodes:
     """流水线节点适配器：注册所有模块并实现节点函数"""
 
-    def __init__(self) -> None:
+    def __init__(self, prompt_type: str = "default") -> None:
         self._modules: dict[str, Any] = {}
 
         # 初始化所有依赖
-        prompt_manager = PromptManager()
+        prompt_manager = PromptManager(prompt_type=prompt_type)
         agent_builder = AgentBuilder()
         verification_module = VerificationModule()
 
@@ -48,11 +49,13 @@ class PipelineNodes:
         input_data = state.get("input_data")
         if not input_data:
             return {"error_message": "缺少输入数据"}
+        extras = dict(state.get("extras", {}))
+        extras["gen_start_time"] = time.perf_counter()
         try:
             constraints = await gen_module.run_intent_analysis(input_data)
-            return {"constraints_list": constraints}
+            return {"extras": extras, "constraints_list": constraints}
         except Exception as e:
-            return {"error_message": f"意图理解失败: {e}"}
+            return {"extras": extras, "error_message": f"意图理解失败: {e}"}
 
     async def code_gen_node(self, state: dict) -> dict:
         """智能体二：代码生成或修正"""
@@ -126,7 +129,9 @@ class PipelineNodes:
         else:
             output_result = output_module.generate_output(code, evaluation, instruct_id)
 
-        return {"output_result": output_result}
+        extras = dict(state.get("extras", {}))
+        extras["gen_end_time"] = time.perf_counter()
+        return {"extras": extras, "output_result": output_result}
 
     async def verify_node(self, state: dict) -> dict:
         """验证节点：Z3执行"""

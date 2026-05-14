@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     results_dir: str = str(Path(__file__).parent / "data" / "results")
     db_path: str = str(Path(__file__).parent / "data" / "experiments.db")
 
+    # Prompt
+    prompt_type: str = "default"
+
     # Experiment
     experiment_name: str = "default"
 

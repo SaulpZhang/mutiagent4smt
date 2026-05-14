@@ -6,14 +6,22 @@ from core.exceptions import CodeVError
 
 
 class PromptManager:
-    """Prompt模板管理器，从文件加载并渲染模板"""
+    """Prompt模板管理器，从文件加载并渲染模板
 
-    def __init__(self, template_dir: str | None = None) -> None:
-        if template_dir is None:
-            template_dir = str(Path(__file__).parent / "templates")
-        self.template_dir = Path(template_dir)
+    支持多类型提示词，通过 prompt_type 切换不同模板目录：
+      - "default" → templates/（根目录，保持向下兼容）
+      - "v2"      → templates/v2/
+    """
+
+    def __init__(self, prompt_type: str = "default") -> None:
+        self.prompt_type = prompt_type
+        base_dir = Path(__file__).parent / "templates"
+        if prompt_type == "default":
+            self.template_dir = base_dir
+        else:
+            self.template_dir = base_dir / prompt_type
         if not self.template_dir.exists():
-            raise CodeVError(f"模板目录不存在: {template_dir}")
+            raise CodeVError(f"模板目录不存在: {self.template_dir}")
 
     def load(self, name: str, **variables: str) -> str:
         """加载模板文件并渲染变量

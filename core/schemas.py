@@ -121,6 +121,7 @@ class ExperimentRecord(BaseModel):
     num_syntax_retries: int = Field(default=0, description="语法修正次数")
     label: bool | None = Field(default=None, description="基准标签")
     model_used: str = Field(default="", description="使用的模型")
+    attempt_number: int = Field(default=1, description="同一用例的第几次尝试")
     total_time_ms: float = Field(default=0.0, description="总耗时(毫秒)")
     stages: list[StageTiming] = Field(default_factory=list, description="各阶段耗时")
     status: Literal["success", "failed", "error"] = Field(default="success", description="处理状态")

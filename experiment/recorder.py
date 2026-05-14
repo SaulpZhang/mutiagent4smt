@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 
 from core.exceptions import ExperimentError
@@ -63,8 +64,8 @@ class ExperimentRecorder:
                     syntax_error_info, code_execution_result, evaluation_result,
                     all_satisfied, satisfied_count, total_constraint_count, label_match,
                     num_iterations, num_syntax_retries, label,
-                    model_used, total_time_ms, stages, status, error_message, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    model_used, attempt_number, total_time_ms, stages, status, error_message, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
@@ -88,6 +89,7 @@ class ExperimentRecorder:
                     record.num_syntax_retries,
                     int(record.label) if record.label is not None else None,
                     record.model_used,
+                    record.attempt_number,
                     record.total_time_ms,
                     stages_json,
                     record.status,
@@ -161,3 +163,89 @@ class ExperimentRecorder:
             return dict(cursor.fetchone())
         finally:
             conn.close()
+
+    def save_run_config(self, run_id: str, config: dict) -> None:
+        """保存本轮实验的运行参数"""
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO experiment_runs
+                    (run_id, prompt_type, model_used, parallel, attempts,
+                     max_iterations, max_syntax_retries, total_cases)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    config.get("prompt_type", "default"),
+                    config.get("model_used", ""),
+                    config.get("parallel", 1),
+                    config.get("attempts", 1),
+                    config.get("max_iterations", 10),
+                    config.get("max_syntax_retries", 5),
+                    config.get("total_cases", 0),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get_run_config(self, run_id: str) -> dict | None:
+        """查询实验运行参数"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT * FROM experiment_runs WHERE run_id = ?", (run_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_pass_at_k_stats(self, run_id: str, ks: list[int] | None = None) -> dict:
+        """计算PASS@K指标
+
+        对指定实验，按用例分组，统计前K次尝试中至少有一次成功的比例。
+        成功 = label_match = 1（Z3结果与基准标签一致）。
+        """
+        if ks is None:
+            ks = [1, 3, 5]
+
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT instruct_id, attempt_number, label_match, all_satisfied, status "
+                "FROM experiments WHERE run_id = ? "
+                "ORDER BY instruct_id, attempt_number",
+                (run_id,),
+            )
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        groups: dict[str, list[dict]] = defaultdict(list)
+        for row in rows:
+            groups[row["instruct_id"]].append(dict(row))
+
+        total_cases = len(groups)
+        result = {"total_cases": total_cases}
+
+        for k in ks:
+            label_pass = 0
+            constraint_pass = 0
+
+            for attempts in groups.values():
+                attempts.sort(key=lambda x: x["attempt_number"])
+                first_k = attempts[:k]
+
+                if any(a.get("label_match") == 1 for a in first_k):
+                    label_pass += 1
+                if any(a.get("all_satisfied") == 1 for a in first_k):
+                    constraint_pass += 1
+
+            result[f"pass_at_{k}"] = round(label_pass / total_cases, 4) if total_cases else 0.0
+            result[f"pass_at_{k}_count"] = label_pass
+            result[f"constraint_pass_at_{k}"] = round(constraint_pass / total_cases, 4) if total_cases else 0.0
+            result[f"constraint_pass_at_{k}_count"] = constraint_pass
+
+        return result

@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     num_syntax_retries INTEGER DEFAULT 0,
     label INTEGER,
     model_used TEXT,
+    attempt_number INTEGER DEFAULT 1,
     total_time_ms REAL DEFAULT 0.0,
     stages TEXT,
     status TEXT DEFAULT 'success',
@@ -45,7 +46,22 @@ CREATE TABLE IF NOT EXISTS metrics_summary (
 )
 """
 
+CREATE_TABLE_EXPERIMENT_RUNS = """
+CREATE TABLE IF NOT EXISTS experiment_runs (
+    run_id TEXT PRIMARY KEY,
+    prompt_type TEXT DEFAULT 'default',
+    model_used TEXT,
+    parallel INTEGER DEFAULT 1,
+    attempts INTEGER DEFAULT 1,
+    max_iterations INTEGER DEFAULT 10,
+    max_syntax_retries INTEGER DEFAULT 5,
+    total_cases INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+)
+"""
+
 ALL_TABLES = [
     CREATE_TABLE_EXPERIMENTS,
     CREATE_TABLE_METRICS,
+    CREATE_TABLE_EXPERIMENT_RUNS,
 ]
