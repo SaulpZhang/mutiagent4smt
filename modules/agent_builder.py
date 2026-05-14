@@ -33,8 +33,8 @@ class AgentBuilder:
     }
 
     def _build_client(self, model_name: str) -> LLMClient:
-        """为指定模型创建LLM客户端，如model_name为空则用全局默认"""
-        actual_model = model_name or settings.model_name
+        """为指定模型创建LLM客户端，如model_name为空则用common_model"""
+        actual_model = model_name or settings.common_model or settings.model_name
         return LLMClient(model_name=actual_model)
 
     def build_intent_agent(self) -> IntentUnderstandingAgent:
