@@ -130,7 +130,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         for attempt_num in range(1, attempts + 1):
             # 每次尝试创建全新的3个Agent
-            case_pipeline = compile_pipeline(prompt_type=prompt_type)
+            case_pipeline = compile_pipeline(prompt_type=prompt_type, run_id=run_id)
 
             record = ExperimentRecord(
                 instruct_id=case.instruct_id,

@@ -16,7 +16,7 @@ from prompt.manager import PromptManager
 class PipelineNodes:
     """流水线节点适配器：注册所有模块并实现节点函数"""
 
-    def __init__(self, prompt_type: str = "default") -> None:
+    def __init__(self, prompt_type: str = "default", run_id: str = "") -> None:
         self._modules: dict[str, Any] = {}
 
         # 初始化所有依赖
@@ -34,7 +34,7 @@ class PipelineNodes:
             evaluation_agent=agent_builder.build_eval_agent(),
             prompt_manager=prompt_manager,
         )
-        self._modules["output"] = OutputModule(settings.results_dir)
+        self._modules["output"] = OutputModule(settings.results_dir, run_id=run_id)
         self._modules["verification"] = verification_module
 
     def _get(self, name: str) -> Any:

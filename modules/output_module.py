@@ -9,9 +9,9 @@ from utils.file_utils import write_text, ensure_dir
 class OutputModule:
     """输出模块：生成包含SMT-LIB V2代码和评估结果的最终输出文件"""
 
-    def __init__(self, output_dir: str) -> None:
-        self.output_dir = output_dir
-        ensure_dir(output_dir)
+    def __init__(self, output_dir: str, run_id: str = "") -> None:
+        self.output_dir = str(Path(output_dir) / run_id) if run_id else output_dir
+        ensure_dir(self.output_dir)
 
     def generate_output(
         self,
