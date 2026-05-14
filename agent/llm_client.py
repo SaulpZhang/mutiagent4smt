@@ -23,7 +23,7 @@ class LLMClient:
         max_tokens: int | None = None,
         request_timeout: int | None = None,
         max_retries: int | None = None,
-        reasoning_level: str | None = None,
+        reasoning_effort: str | None = None,
         thinking: bool | None = None,
     ) -> None:
         self.api_key = api_key or settings.api_key
@@ -33,7 +33,7 @@ class LLMClient:
         self.max_tokens = max_tokens or settings.llm_max_tokens
         self.request_timeout = request_timeout or settings.llm_request_timeout
         self.max_retries = max_retries or settings.llm_max_retries
-        self.reasoning_level = reasoning_level if reasoning_level is not None else settings.reasoning_level
+        self.reasoning_effort = reasoning_effort if reasoning_effort is not None else settings.reasoning_effort
         self.thinking = thinking if thinking is not None else settings.thinking
 
         if not self.api_key:
@@ -57,13 +57,10 @@ class LLMClient:
             model_kwargs["response_format"] = {"type": "json_object"}
 
         # DeepSeek 推理参数
-        extra_body: dict[str, Any] = {}
-        if self.reasoning_level:
-            extra_body["reasoning_level"] = self.reasoning_level
+        if self.reasoning_effort:
+            model_kwargs["reasoning_effort"] = self.reasoning_effort
         if self.thinking:
-            extra_body["thinking"] = self.thinking
-        if extra_body:
-            model_kwargs["extra_body"] = extra_body
+            model_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
         if model_kwargs:
             kwargs["model_kwargs"] = model_kwargs

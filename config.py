@@ -30,9 +30,9 @@ class Settings(BaseSettings):
     # 非Agent通用模型（3个Agent以外的LLM调用使用此模型）
     common_model: str = ""
 
-    # LLM推理设置
-    reasoning_level: str = "high"   # 推理强度: low / medium / high
-    thinking: bool = True           # 是否启用thinking
+    # LLM推理设置（DeepSeek API 参数）
+    reasoning_effort: str = "high"   # reasoning_effort: low / medium / high
+    thinking: bool = True           # 是否启用thinking模式
 
     # Pipeline
     max_iterations: int = 10
