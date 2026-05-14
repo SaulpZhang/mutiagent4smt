@@ -36,3 +36,7 @@ first_interim_report_v1.pdf
 # Environment variables
 .env
 .env.*
+
+# Generated data
+data/results/
+data/experiments.db

@@ -196,10 +196,12 @@ instructs/instruct_1_126.json →  accounts/account_1_126.json →  answer_valid
 
 - [x] 基准实验完成（初步性能分析）
 - [x] 项目架构设计（详见 [项目架构设计文档.md](项目架构设计文档.md)）
-- [ ] 系统整体架构实现
-- [ ] Generation Module实现（Agent 1 + Agent 2）
-- [ ] Evaluation Module实现（Agent 3）
-- [ ] Input/Output/Verification Module实现
+- [x] 需求开发规格说明（详见 [需求开发规格说明.md](需求开发规格说明.md)）
+- [x] 项目整体框架实现（框架搭建完毕，可正常导入运行）
+- [ ] Generation Module实现（Agent 1 + Agent 2 业务逻辑）
+- [ ] Evaluation Module实现（Agent 3 业务逻辑）
+- [ ] Input/Output/Verification Module实现（框架已完成，需细化）
+- [ ] Pipeline流水线完整集成（LangGraph图构建）
+- [ ] 实验追踪系统完整实现（SQLite记录+指标计算）
 - [ ] 端到端集成测试
-- [ ] LLM微调实验
-- [ ] 鲁棒性实验
+- [ ] 消融实验（不同LLM、约束列表影响）
