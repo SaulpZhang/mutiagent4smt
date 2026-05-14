@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections import defaultdict
 from pathlib import Path
 
 from core.exceptions import ExperimentError
@@ -64,7 +63,8 @@ class ExperimentRecorder:
                     syntax_error_info, code_execution_result, evaluation_result,
                     all_satisfied, satisfied_count, total_constraint_count, label_match,
                     num_iterations, num_syntax_retries, label,
-                    model_used, attempt_number, total_time_ms, stages, status, error_message, timestamp
+                    model_used, total_time_ms, total_attempts, first_success_at,
+                    stages, status, error_message, timestamp
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -89,8 +89,9 @@ class ExperimentRecorder:
                     record.num_syntax_retries,
                     int(record.label) if record.label is not None else None,
                     record.model_used,
-                    record.attempt_number,
                     record.total_time_ms,
+                    record.total_attempts,
+                    record.first_success_at,
                     stages_json,
                     record.status,
                     record.error_message,
@@ -205,8 +206,8 @@ class ExperimentRecorder:
     def get_pass_at_k_stats(self, run_id: str, ks: list[int] | None = None) -> dict:
         """计算PASS@K指标
 
-        对指定实验，按用例分组，统计前K次尝试中至少有一次成功的比例。
-        成功 = label_match = 1（Z3结果与基准标签一致）。
+        通过 first_success_at 字段聚合：
+          PASS@K = first_success_at 在 1..K 范围内的用例比例。
         """
         if ks is None:
             ks = [1, 3, 5]
@@ -214,38 +215,25 @@ class ExperimentRecorder:
         conn = self._get_conn()
         try:
             cursor = conn.execute(
-                "SELECT instruct_id, attempt_number, label_match, all_satisfied, status "
-                "FROM experiments WHERE run_id = ? "
-                "ORDER BY instruct_id, attempt_number",
+                "SELECT first_success_at, total_attempts, all_satisfied "
+                "FROM experiments WHERE run_id = ?",
                 (run_id,),
             )
             rows = cursor.fetchall()
         finally:
             conn.close()
 
-        groups: dict[str, list[dict]] = defaultdict(list)
-        for row in rows:
-            groups[row["instruct_id"]].append(dict(row))
-
-        total_cases = len(groups)
+        total_cases = len(rows)
         result = {"total_cases": total_cases}
 
         for k in ks:
-            label_pass = 0
-            constraint_pass = 0
+            count = sum(1 for r in rows if r["first_success_at"] is not None and r["first_success_at"] <= k)
+            result[f"pass_at_{k}"] = round(count / total_cases, 4) if total_cases else 0.0
+            result[f"pass_at_{k}_count"] = count
 
-            for attempts in groups.values():
-                attempts.sort(key=lambda x: x["attempt_number"])
-                first_k = attempts[:k]
-
-                if any(a.get("label_match") == 1 for a in first_k):
-                    label_pass += 1
-                if any(a.get("all_satisfied") == 1 for a in first_k):
-                    constraint_pass += 1
-
-            result[f"pass_at_{k}"] = round(label_pass / total_cases, 4) if total_cases else 0.0
-            result[f"pass_at_{k}_count"] = label_pass
-            result[f"constraint_pass_at_{k}"] = round(constraint_pass / total_cases, 4) if total_cases else 0.0
-            result[f"constraint_pass_at_{k}_count"] = constraint_pass
+        # 约束满足率
+        cs_count = sum(1 for r in rows if r["all_satisfied"] == 1)
+        result["constraint_pass_rate"] = round(cs_count / total_cases, 4) if total_cases else 0.0
+        result["constraint_pass_count"] = cs_count
 
         return result
