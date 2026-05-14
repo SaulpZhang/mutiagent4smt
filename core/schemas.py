@@ -101,7 +101,7 @@ class ExperimentRecord(BaseModel):
     """单个实验用例的完整记录"""
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex, description="记录唯一标识")
-    instruct_id: str = Field(default="", description="指令标识")
+    run_id: str = Field(default="", description="实验运行编号，同一批运行的记录共享同一编号")
     account_id: str = Field(default="", description="账户标识")
     instruction: str = Field(default="", description="验证指令原文")
     account_data: dict = Field(default_factory=dict, description="IAM配置数据")
@@ -123,21 +123,4 @@ class ExperimentRecord(BaseModel):
     timestamp: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat(),
         description="时间戳",
-    )
-
-
-class BenchmarkRecord(BaseModel):
-    """基准实验记录"""
-
-    id: str = Field(default_factory=lambda: uuid.uuid4().hex)
-    instruct_id: str = Field(default="")
-    code_form: Literal["smt-lib-v2", "python-api"] = Field(description="代码形式")
-    prompt_type: Literal["zero-shot", "one-shot", "few-shot", "cot"] = Field(description="提示词策略")
-    generated_code: str = Field(default="", description="生成的代码")
-    is_correct: bool = Field(default=False, description="是否正确")
-    execution_result: str | None = Field(default=None, description="执行结果")
-    generation_time_ms: float = Field(default=0.0, description="生成耗时")
-    model_used: str = Field(default="", description="使用的模型")
-    timestamp: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat(),
     )

@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from core.exceptions import ExperimentError
-from core.schemas import BenchmarkRecord, ExperimentRecord
+from core.schemas import ExperimentRecord
 from experiment.models import ALL_TABLES
 
 
@@ -48,15 +48,16 @@ class ExperimentRecorder:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO experiments (
-                    id, instruct_id, account_id, instruction, account_data,
+                    id, run_id, instruct_id, account_id, instruction, account_data,
                     constraints_list, generated_code, syntax_valid,
                     syntax_error_info, code_execution_result, evaluation_result,
                     all_satisfied, num_iterations, num_syntax_retries, label,
                     model_used, total_time_ms, stages, status, error_message, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
+                    record.run_id,
                     record.instruct_id,
                     record.account_id,
                     record.instruction,
@@ -82,38 +83,6 @@ class ExperimentRecorder:
             conn.commit()
         except sqlite3.Error as e:
             raise ExperimentError(f"保存实验记录失败: {e}") from e
-        finally:
-            conn.close()
-
-        return record.id
-
-    def save_benchmark(self, record: BenchmarkRecord) -> str:
-        """保存一条基准实验记录"""
-        conn = self._get_conn()
-        try:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO benchmarks (
-                    id, instruct_id, code_form, prompt_type, generated_code,
-                    is_correct, execution_result, generation_time_ms, model_used, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record.id,
-                    record.instruct_id,
-                    record.code_form,
-                    record.prompt_type,
-                    record.generated_code,
-                    int(record.is_correct),
-                    record.execution_result,
-                    record.generation_time_ms,
-                    record.model_used,
-                    record.timestamp,
-                ),
-            )
-            conn.commit()
-        except sqlite3.Error as e:
-            raise ExperimentError(f"保存基准记录失败: {e}") from e
         finally:
             conn.close()
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from config import settings
 from agent.llm_client import LLMClient
 from modules.agents.intent_agent import IntentUnderstandingAgent
 from modules.agents.code_gen_agent import CodeGenerationAgent
@@ -7,7 +8,11 @@ from modules.agents.eval_agent import EvaluationAgent
 
 
 class AgentBuilder:
-    """Agent装配器：创建并配置所有三个Agent"""
+    """Agent装配器：创建并配置所有三个Agent
+
+    每个Agent可独立配置不同的LLM模型（通过.env中的AGNET_1/2/3_MODEL指定）。
+    如未指定，各Agent使用全局默认model_name。
+    """
 
     SYSTEM_PROMPTS = {
         "intent": (
@@ -25,52 +30,30 @@ class AgentBuilder:
             "请以JSON格式输出，包含items数组（每项含constraint_id、status、reason）"
             "和all_satisfied字段。保持评估客观中立。"
         ),
-        "syntax_fix": (
-            "你是一个SMT-LIB V2代码调试专家。你的任务是修复SMT-LIB V2代码中的语法错误。"
-            "只修复语法问题，不改变代码逻辑。输出完整的修正后的代码。"
-        ),
-        "code_mod": (
-            "你是一个SMT-LIB V2代码优化专家。你的任务是根据评估反馈修改SMT-LIB V2代码，"
-            "使其满足所有约束要求。不要破坏已满足的部分。输出完整的修改后的代码。"
-        ),
     }
 
-    def __init__(self, llm_client: LLMClient | None = None) -> None:
-        self.llm_client = llm_client or LLMClient()
+    def _build_client(self, model_name: str) -> LLMClient:
+        """为指定模型创建LLM客户端，如model_name为空则用全局默认"""
+        actual_model = model_name or settings.model_name
+        return LLMClient(model_name=actual_model)
 
     def build_intent_agent(self) -> IntentUnderstandingAgent:
         return IntentUnderstandingAgent(
             name="intent_understanding",
             system_prompt=self.SYSTEM_PROMPTS["intent"],
-            llm_client=self.llm_client,
+            llm_client=self._build_client(settings.agnet_1_model),
         )
 
     def build_code_gen_agent(self) -> CodeGenerationAgent:
         return CodeGenerationAgent(
             name="code_generation",
             system_prompt=self.SYSTEM_PROMPTS["code_gen"],
-            llm_client=self.llm_client,
+            llm_client=self._build_client(settings.agnet_2_model),
         )
 
     def build_eval_agent(self) -> EvaluationAgent:
         return EvaluationAgent(
             name="evaluation",
             system_prompt=self.SYSTEM_PROMPTS["eval"],
-            llm_client=self.llm_client,
-        )
-
-    def build_syntax_fix_agent(self) -> CodeGenerationAgent:
-        """语法修正使用CodeGenerationAgent，但使用专门的system prompt"""
-        return CodeGenerationAgent(
-            name="syntax_fix",
-            system_prompt=self.SYSTEM_PROMPTS["syntax_fix"],
-            llm_client=self.llm_client,
-        )
-
-    def build_code_mod_agent(self) -> CodeGenerationAgent:
-        """语义修正使用CodeGenerationAgent，但使用专门的system prompt"""
-        return CodeGenerationAgent(
-            name="code_modification",
-            system_prompt=self.SYSTEM_PROMPTS["code_mod"],
-            llm_client=self.llm_client,
+            llm_client=self._build_client(settings.agnet_3_model),
         )

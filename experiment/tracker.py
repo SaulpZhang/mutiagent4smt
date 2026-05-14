@@ -30,6 +30,7 @@ class MetricsTracker:
         instruction: str = "",
         account_data: dict | None = None,
         model_used: str = "",
+        run_id: str = "",
     ) -> ExperimentRecord:
         """开始一个新的实验记录"""
         record = ExperimentRecord(
@@ -38,6 +39,7 @@ class MetricsTracker:
             instruction=instruction,
             account_data=account_data or {},
             model_used=model_used,
+            run_id=run_id,
         )
         self._record = record
         current_record.set(record)

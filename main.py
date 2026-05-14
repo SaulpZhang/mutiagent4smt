@@ -4,7 +4,6 @@
 使用方法:
     python main.py run              # 运行系统流水线（全部126个用例）
     python main.py run --index 1    # 只运行第1个用例
-    python main.py benchmark        # 运行基准实验
     python main.py stats            # 查看实验结果统计
     python main.py init             # 检查项目配置
 """
@@ -13,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
+from datetime import datetime
 import time
 
 
@@ -33,13 +32,6 @@ def main() -> None:
         help="指定LLM模型名称",
     )
 
-    bm_parser = subparsers.add_parser("benchmark", help="运行基准实验")
-    bm_parser.add_argument(
-        "--prompt-type", type=str, default=None,
-        choices=["zero-shot", "one-shot", "few-shot", "cot"],
-        help="指定prompt策略",
-    )
-
     subparsers.add_parser("stats", help="查看实验结果统计")
     subparsers.add_parser("init", help="初始化项目（检查配置和依赖）")
 
@@ -47,8 +39,6 @@ def main() -> None:
 
     if args.command == "run":
         asyncio.run(run_pipeline(args))
-    elif args.command == "benchmark":
-        asyncio.run(run_benchmark(args))
     elif args.command == "stats":
         show_stats()
     elif args.command == "init":
@@ -70,16 +60,15 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     print("  多LLM智能体集成的IAM策略形式化验证")
     print("=" * 60)
 
-    # 初始化
     input_module = InputModule(settings.data_dir)
     recorder = ExperimentRecorder(settings.db_path)
-    case_pipeline = compile_pipeline()
 
-    # 加载数据
     pairs = input_module.load_all_pairs()
     answers = input_module.load_answers()
 
-    # 确定运行范围
+    run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    print(f"  实验编号: {run_id}\n")
+
     if args.index is not None:
         indices = [args.index - 1]
         total = 1
@@ -98,16 +87,18 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         case_num = idx + 1
         print(f"\n[{case_num}/{total}] {case.instruct_id} | {case.instruction[:40]}...")
 
-        # 初始化实验记录
+        # 每条数据创建全新的3个Agent，实验结束后销毁
+        case_pipeline = compile_pipeline()
+
         record = tracker.start_new_record(
             instruct_id=case.instruct_id,
             account_id=case.account_id,
             instruction=case.instruction,
             account_data=case.account_data,
             model_used=settings.model_name,
+            run_id=run_id,
         )
 
-        # 准备 PipelineState
         initial_state = {
             "input_data": case,
             "instruct_id": case.instruct_id,
@@ -128,11 +119,9 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             "extras": {},
         }
 
-        # 加入错误处理
         case_start = time.perf_counter()
 
         try:
-            # 运行流水线
             final_state = await case_pipeline.ainvoke(initial_state)
 
             elapsed_ms = (time.perf_counter() - case_start) * 1000
@@ -175,11 +164,8 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                     print(f"  ~ 存在不满足 ({record.num_iterations}次迭代)")
                     results_summary["failed"] += 1
 
-                # Z3结果与基准标签比对
                 if ver_result and label is not None:
                     z3_output = ver_result.execution_output.strip().lower()
-                    # "sat" → 存在有效权限 → 预期 label=true
-                    # "unsat" → 无有效权限 → 预期 label=false
                     z3_has_permission = z3_output == "sat"
                     label_match = z3_has_permission == label
                     match_str = "✓" if label_match else "✗"
@@ -198,13 +184,11 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             results_summary["error"] += 1
             print(f"  [!!] 异常: {e}")
 
-        # 保存到数据库
         try:
             recorder.save_experiment(record)
         except Exception as e:
             print(f"  [!] 保存实验记录失败: {e}")
 
-    # 汇总
     print("\n" + "=" * 60)
     print(f"  运行完成")
     print(f"  成功: {results_summary['success']}, 失败: {results_summary['failed']}, 错误: {results_summary['error']}")
@@ -213,12 +197,6 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         print(f"  用户意图对齐率: {align_rate:.1f}%")
     print(f"  数据库: {settings.db_path}")
     print("=" * 60)
-
-
-async def run_benchmark(args: argparse.Namespace) -> None:
-    """运行基准实验"""
-    print("[CodeV] 正在启动基准实验...")
-    print("[CodeV] 基准实验将在系统实验完成后补充实现")
 
 
 def show_stats() -> None:
@@ -252,7 +230,6 @@ def init_project() -> None:
     print("  CodeV 项目初始化检查")
     print("=" * 60)
 
-    # 配置检查
     print(f"\n[配置]")
     print(f"  API URL: {settings.api_url or '未设置'}")
     print(f"  Model: {settings.model_name}")
@@ -261,7 +238,6 @@ def init_project() -> None:
     else:
         print(f"  API Key: 已设置 ({settings.api_key[:8]}...)")
 
-    # 数据目录检查
     print(f"\n[数据]")
     data_path = Path(settings.data_dir)
     if data_path.exists():
@@ -275,7 +251,6 @@ def init_project() -> None:
     else:
         print(f"  [!] 数据目录不存在: {settings.data_dir}")
 
-    # Prompt检查
     print(f"\n[Prompt]")
     pm = PromptManager()
     templates = pm.list_templates()
@@ -283,7 +258,6 @@ def init_project() -> None:
     for t in templates:
         print(f"    - {t}")
 
-    # 依赖检查
     print(f"\n[依赖]")
     try:
         import z3
@@ -296,7 +270,6 @@ def init_project() -> None:
     except ImportError:
         print(f"  LangGraph: 未安装")
 
-    # Z3执行检查
     print(f"\n[Z3验证]")
     from utils.smt_executor import SMTExecutor
     executor = SMTExecutor()

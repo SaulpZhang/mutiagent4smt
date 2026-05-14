@@ -13,7 +13,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # LLM API
+    # LLM API (全局默认)
     api_key: str = ""
     api_url: str = ""
     model_name: str = "deepseek-chat"
@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     llm_request_timeout: int = 120
     llm_max_retries: int = 3
+
+    # 各Agent独立模型配置（如不设置则使用全局model_name）
+    agnet_1_model: str = ""   # Agent 1 意图理解
+    agnet_2_model: str = ""   # Agent 2 代码生成
+    agnet_3_model: str = ""   # Agent 3 评估
 
     # Pipeline
     max_iterations: int = 10

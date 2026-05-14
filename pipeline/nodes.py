@@ -36,10 +36,6 @@ class PipelineNodes:
         self._modules["output"] = OutputModule(settings.results_dir)
         self._modules["verification"] = verification_module
 
-        self._syntax_fix_agent = agent_builder.build_syntax_fix_agent()
-        self._code_mod_agent = agent_builder.build_code_mod_agent()
-        self._prompt_manager = prompt_manager
-
     def _get(self, name: str) -> Any:
         m = self._modules.get(name)
         if m is None:

@@ -6,6 +6,7 @@
 CREATE_TABLE_EXPERIMENTS = """
 CREATE TABLE IF NOT EXISTS experiments (
     id TEXT PRIMARY KEY,
+    run_id TEXT,
     instruct_id TEXT,
     account_id TEXT,
     instruction TEXT,
@@ -29,21 +30,6 @@ CREATE TABLE IF NOT EXISTS experiments (
 )
 """
 
-CREATE_TABLE_BENCHMARKS = """
-CREATE TABLE IF NOT EXISTS benchmarks (
-    id TEXT PRIMARY KEY,
-    instruct_id TEXT,
-    code_form TEXT,
-    prompt_type TEXT,
-    generated_code TEXT,
-    is_correct INTEGER,
-    execution_result TEXT,
-    generation_time_ms REAL DEFAULT 0.0,
-    model_used TEXT,
-    timestamp TEXT
-)
-"""
-
 CREATE_TABLE_METRICS = """
 CREATE TABLE IF NOT EXISTS metrics_summary (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +43,5 @@ CREATE TABLE IF NOT EXISTS metrics_summary (
 
 ALL_TABLES = [
     CREATE_TABLE_EXPERIMENTS,
-    CREATE_TABLE_BENCHMARKS,
     CREATE_TABLE_METRICS,
 ]
