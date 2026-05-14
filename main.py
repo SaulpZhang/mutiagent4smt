@@ -117,6 +117,14 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         "total_cases": total,
     })
 
+    # 写入实验记录日志
+    from pathlib import Path
+    log_path = Path(settings.data_dir).parent / "实验记录.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"[{run_id}] | {now_str} | {prompt_type} | {settings.model_name} | {parallel} | {attempts}\n")
+
     async def process_one(idx: int) -> dict:
         """处理单个用例（内部循环 attempts 次），返回该用例的结果摘要"""
         case = pairs[idx]
