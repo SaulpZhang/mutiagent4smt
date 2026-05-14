@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from datetime import datetime
+import json
 import time
 
 
@@ -31,6 +32,10 @@ def main() -> None:
         "--model", type=str, default=None,
         help="指定LLM模型名称",
     )
+    run_parser.add_argument(
+        "-p", "--parallel", type=int, default=10,
+        help="并行处理数（默认10）",
+    )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
     subparsers.add_parser("init", help="初始化项目（检查配置和依赖）")
@@ -48,20 +53,25 @@ def main() -> None:
 
 
 async def run_pipeline(args: argparse.Namespace) -> None:
-    """运行系统流水线"""
+    """运行系统流水线（支持并行处理）"""
     from config import settings
+    from core.schemas import ExperimentRecord
     from modules.input_module import InputModule
-    from experiment.tracker import tracker
     from experiment.recorder import ExperimentRecorder
     from pipeline.graph import compile_pipeline
+
+    parallel = args.parallel or 1
 
     print("=" * 60)
     print("  CodeV 系统流水线")
     print("  多LLM智能体集成的IAM策略形式化验证")
+    if parallel > 1:
+        print(f"  并行数: {parallel}")
     print("=" * 60)
 
     input_module = InputModule(settings.data_dir)
     recorder = ExperimentRecorder(settings.db_path)
+    recorder.enable_wal()
 
     pairs = input_module.load_all_pairs()
     answers = input_module.load_answers()
@@ -72,25 +82,22 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     if args.index is not None:
         indices = [args.index - 1]
         total = 1
-        print(f"\n运行单用例: 第 {args.index} 个")
+        print(f"运行单用例: 第 {args.index} 个\n")
     else:
-        indices = range(len(pairs))
+        indices = list(range(len(pairs)))
         total = len(pairs)
-        print(f"\n运行全部 {total} 个用例\n")
+        print(f"运行全部 {total} 个用例\n")
 
-    results_summary = {"success": 0, "failed": 0, "error": 0, "aligned": 0}
-
-    for idx in indices:
+    async def process_one(idx: int) -> dict:
+        """处理单个用例，返回该用例的结果摘要"""
         case = pairs[idx]
         label = answers[idx] if idx < len(answers) else None
-
         case_num = idx + 1
-        print(f"\n[{case_num}/{total}] {case.instruct_id} | {case.instruction[:40]}...")
 
         # 每条数据创建全新的3个Agent，实验结束后销毁
         case_pipeline = compile_pipeline()
 
-        record = tracker.start_new_record(
+        record = ExperimentRecord(
             instruct_id=case.instruct_id,
             account_id=case.account_id,
             instruction=case.instruction,
@@ -120,17 +127,18 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         }
 
         case_start = time.perf_counter()
+        result = {"idx": idx, "success": False, "aligned": False, "error": False}
 
         try:
             final_state = await case_pipeline.ainvoke(initial_state)
-
             elapsed_ms = (time.perf_counter() - case_start) * 1000
             error_msg = final_state.get("error_message")
 
             if error_msg:
-                print(f"  [!] 错误: {error_msg}")
+                print(f"  [{case_num}/{total}] {case.instruct_id} [!] {error_msg}")
                 record.status = "error"
                 record.error_message = error_msg
+                result["error"] = True
             else:
                 record.status = "success"
                 record.syntax_valid = (
@@ -150,6 +158,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 constraints = final_state.get("constraints_list")
                 if constraints:
                     record.constraints_list = constraints.model_dump_json()
+                    record.constraint_text = json.dumps(
+                        [c.model_dump() for c in constraints.constraints],
+                        ensure_ascii=False,
+                    )
                 ver_result = final_state.get("verification_result")
                 if ver_result:
                     record.code_execution_result = ver_result.execution_output
@@ -157,46 +169,92 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 record.num_syntax_retries = final_state.get("syntax_retry_count", 0)
                 record.label = label
 
-                if record.all_satisfied:
-                    print(f"  ✓ 全部约束满足 ({record.num_iterations}次迭代)")
-                    results_summary["aligned"] += 1
-                else:
-                    print(f"  ~ 存在不满足 ({record.num_iterations}次迭代)")
-                    results_summary["failed"] += 1
+                # 约束满足统计
+                if ev_result:
+                    record.total_constraint_count = len(ev_result.items)
+                    record.satisfied_count = ev_result.satisfied_count
+                # 标签匹配统计
+                if ver_result and label is not None:
+                    z3_output = ver_result.execution_output.strip().lower()
+                    z3_has_permission = z3_output == "sat"
+                    record.label_match = z3_has_permission == label
 
+                all_satisfied = record.all_satisfied
+                result["success"] = True
+                result["aligned"] = bool(all_satisfied)
+
+                status = "✓" if all_satisfied else "~"
+                iters = record.num_iterations
+                match_str = ""
                 if ver_result and label is not None:
                     z3_output = ver_result.execution_output.strip().lower()
                     z3_has_permission = z3_output == "sat"
                     label_match = z3_has_permission == label
-                    match_str = "✓" if label_match else "✗"
-                    print(f"  Z3: {z3_output} | 预期: {label} | {match_str}")
-
-                results_summary["success"] += 1
+                    match_str = " ✓" if label_match else " ✗"
+                    match_str += f" (Z3={z3_output}, label={label})"
+                print(f"  [{case_num}/{total}] {case.instruct_id}: {status} "
+                      f"({iters}次迭代{match_str}, {elapsed_ms:.0f}ms)")
 
             record.total_time_ms = elapsed_ms
-            print(f"  耗时: {elapsed_ms:.0f}ms")
 
         except Exception as e:
             elapsed_ms = (time.perf_counter() - case_start) * 1000
             record.status = "error"
             record.error_message = str(e)
             record.total_time_ms = elapsed_ms
-            results_summary["error"] += 1
-            print(f"  [!!] 异常: {e}")
+            result["error"] = True
+            result["success"] = False
+            print(f"  [{case_num}/{total}] {case.instruct_id} [!!] {e}")
 
         try:
             recorder.save_experiment(record)
         except Exception as e:
-            print(f"  [!] 保存实验记录失败: {e}")
+            print(f"  [!] {case.instruct_id} 保存失败: {e}")
 
-    print("\n" + "=" * 60)
-    print(f"  运行完成")
-    print(f"  成功: {results_summary['success']}, 失败: {results_summary['failed']}, 错误: {results_summary['error']}")
-    if results_summary["success"] > 0:
-        align_rate = results_summary["aligned"] / results_summary["success"] * 100
-        print(f"  用户意图对齐率: {align_rate:.1f}%")
-    print(f"  数据库: {settings.db_path}")
-    print("=" * 60)
+        return result
+
+    if parallel > 1 and total > 1:
+        # 分批处理
+        batch_size = (total + parallel - 1) // parallel
+        batches = [indices[i:i + batch_size] for i in range(0, total, batch_size)]
+        print(f"  分批: {len(batches)} 批, 每批 ~{batch_size} 条\n")
+
+        async def run_batch(batch: list[int]) -> list[dict]:
+            return [await process_one(idx) for idx in batch]
+
+        batch_results_lists = await asyncio.gather(*[run_batch(b) for b in batches])
+        # 扁平化结果
+        all_results = [r for blist in batch_results_lists for r in blist]
+    else:
+        all_results = [await process_one(idx) for idx in indices]
+
+    # 汇总 — 从数据库读取该次实验的完整统计
+    stats = recorder.get_summary_stats(run_id=run_id)
+
+    print(f"\n{'=' * 60}")
+    print(f"  运行完成  实验编号: {run_id}")
+    print(f"{'=' * 60}")
+    print(f"  总用例:     {stats.get('total', 0)}")
+    print(f"  成功:       {stats.get('success_count', 0)}")
+    print(f"  错误:       {stats.get('error_count', 0)}")
+    print(f"  {'─' * 47}")
+    csr = stats.get('constraint_satisfaction_rate')
+    if csr is not None:
+        asc = stats.get('all_satisfied_count', 0)
+        print(f"  全部约束满足: {asc} 例")
+        print(f"  约束满足率:   {csr:.2%}")
+    print(f"  {'─' * 47}")
+    la = stats.get('label_accuracy')
+    if la is not None:
+        lmc = stats.get('label_match_count', 0)
+        ltc = stats.get('label_total_count', 0)
+        print(f"  标签匹配:     {lmc}/{ltc}")
+        print(f"  标签准确率:   {la:.2%}")
+    print(f"  {'─' * 47}")
+    print(f"  平均耗时:     {stats.get('avg_time_ms', 0):.0f}ms")
+    print(f"  平均迭代:     {stats.get('avg_iterations', 0):.1f}")
+    print(f"  数据库:       {settings.db_path}")
+    print(f"{'=' * 60}")
 
 
 def show_stats() -> None:
@@ -210,12 +268,27 @@ def show_stats() -> None:
     print("=" * 60)
     print("  实验结果统计")
     print("=" * 60)
-    print(f"  总用例: {stats.get('total', 0)}")
-    print(f"  成功: {stats.get('success_count', 0)}")
-    print(f"  失败: {stats.get('failed_count', 0)}")
-    print(f"  用户意图对齐: {stats.get('aligned_count', 0)}")
-    print(f"  平均耗时: {stats.get('avg_time_ms', 0):.0f}ms")
-    print(f"  平均迭代: {stats.get('avg_iterations', 0):.1f}")
+    print(f"  总用例:     {stats.get('total', 0)}")
+    print(f"  成功:       {stats.get('success_count', 0)}")
+    print(f"  错误:       {stats.get('error_count', 0)}")
+    print(f"  {'─' * 47}")
+    # 约束满足率
+    csr = stats.get('constraint_satisfaction_rate')
+    if csr is not None:
+        asc = stats.get('all_satisfied_count', 0)
+        print(f"  全部约束满足: {asc} 例")
+        print(f"  约束满足率:   {csr:.2%}")
+    print(f"  {'─' * 47}")
+    # 标签准确率
+    la = stats.get('label_accuracy')
+    if la is not None:
+        lmc = stats.get('label_match_count', 0)
+        ltc = stats.get('label_total_count', 0)
+        print(f"  标签匹配:     {lmc}/{ltc}")
+        print(f"  标签准确率:   {la:.2%}")
+    print(f"  {'─' * 47}")
+    print(f"  平均耗时:     {stats.get('avg_time_ms', 0):.0f}ms")
+    print(f"  平均迭代:     {stats.get('avg_iterations', 0):.1f}")
     print("=" * 60)
 
 

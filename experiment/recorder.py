@@ -26,8 +26,18 @@ class ExperimentRecorder:
         """初始化数据库表"""
         conn = self._get_conn()
         try:
+            conn.execute("PRAGMA journal_mode=WAL")
             for table_sql in ALL_TABLES:
                 conn.execute(table_sql)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def enable_wal(self) -> None:
+        """启用WAL模式以支持并行写入"""
+        conn = self._get_conn()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.commit()
         finally:
             conn.close()
@@ -49,11 +59,12 @@ class ExperimentRecorder:
                 """
                 INSERT OR REPLACE INTO experiments (
                     id, run_id, instruct_id, account_id, instruction, account_data,
-                    constraints_list, generated_code, syntax_valid,
+                    constraints_list, constraint_text, generated_code, syntax_valid,
                     syntax_error_info, code_execution_result, evaluation_result,
-                    all_satisfied, num_iterations, num_syntax_retries, label,
+                    all_satisfied, satisfied_count, total_constraint_count, label_match,
+                    num_iterations, num_syntax_retries, label,
                     model_used, total_time_ms, stages, status, error_message, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.id,
@@ -63,12 +74,16 @@ class ExperimentRecorder:
                     record.instruction,
                     json.dumps(record.account_data, ensure_ascii=False),
                     record.constraints_list,
+                    record.constraint_text,
                     record.generated_code,
                     int(record.syntax_valid) if record.syntax_valid is not None else None,
                     record.syntax_error_info,
                     record.code_execution_result,
                     record.evaluation_result,
                     int(record.all_satisfied) if record.all_satisfied is not None else None,
+                    record.satisfied_count,
+                    record.total_constraint_count,
+                    int(record.label_match) if record.label_match is not None else None,
                     record.num_iterations,
                     record.num_syntax_retries,
                     int(record.label) if record.label is not None else None,
@@ -106,20 +121,43 @@ class ExperimentRecorder:
         finally:
             conn.close()
 
-    def get_summary_stats(self) -> dict:
-        """获取实验摘要统计"""
+    def get_summary_stats(self, run_id: str | None = None) -> dict:
+        """获取实验摘要统计，可指定 run_id 筛选某次实验"""
         conn = self._get_conn()
         try:
-            cursor = conn.execute("""
+            where = "WHERE run_id = ?" if run_id else ""
+            params = [run_id] if run_id else []
+            cursor = conn.execute(
+                f"""
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as success_count,
                     SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_count,
-                    SUM(CASE WHEN all_satisfied = 1 THEN 1 ELSE 0 END) as aligned_count,
+                    SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as error_count,
+                    -- 约束满足率：所有成功用例中 satisfied_count / total_constraint_count
+                    CASE
+                        WHEN SUM(CASE WHEN status = 'success' THEN total_constraint_count ELSE 0 END) > 0
+                        THEN 1.0 * SUM(CASE WHEN status = 'success' THEN satisfied_count ELSE 0 END)
+                            / SUM(CASE WHEN status = 'success' THEN total_constraint_count ELSE 0 END)
+                        ELSE NULL
+                    END as constraint_satisfaction_rate,
+                    -- 全部约束满足的用例数
+                    SUM(CASE WHEN all_satisfied = 1 THEN 1 ELSE 0 END) as all_satisfied_count,
+                    -- 标签匹配率：label_match=1 的占比（针对有label的数据）
+                    CASE
+                        WHEN SUM(CASE WHEN label_match IS NOT NULL THEN 1 ELSE 0 END) > 0
+                        THEN 1.0 * SUM(CASE WHEN label_match = 1 THEN 1 ELSE 0 END)
+                            / SUM(CASE WHEN label_match IS NOT NULL THEN 1 ELSE 0 END)
+                        ELSE NULL
+                    END as label_accuracy,
+                    SUM(CASE WHEN label_match = 1 THEN 1 ELSE 0 END) as label_match_count,
+                    SUM(CASE WHEN label_match IS NOT NULL THEN 1 ELSE 0 END) as label_total_count,
                     AVG(total_time_ms) as avg_time_ms,
                     AVG(num_iterations) as avg_iterations
-                FROM experiments
-            """)
+                FROM experiments {where}
+                """,
+                params,
+            )
             return dict(cursor.fetchone())
         finally:
             conn.close()
