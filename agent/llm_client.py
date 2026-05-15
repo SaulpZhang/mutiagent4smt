@@ -56,14 +56,14 @@ class LLMClient:
         if json_output:
             model_kwargs["response_format"] = {"type": "json_object"}
 
-        # DeepSeek 推理参数
-        if self.reasoning_effort:
-            model_kwargs["reasoning_effort"] = self.reasoning_effort
-        if self.thinking:
-            model_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
-
         if model_kwargs:
             kwargs["model_kwargs"] = model_kwargs
+
+        # DeepSeek 推理参数（顶层参数，避免 LangChain 警告）
+        if self.reasoning_effort:
+            kwargs["reasoning_effort"] = self.reasoning_effort
+        if self.thinking:
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
         return ChatOpenAI(**kwargs)
 

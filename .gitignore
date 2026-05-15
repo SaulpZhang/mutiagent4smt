@@ -28,6 +28,9 @@ dist/
 .idea/
 .vscode/
 
+# macOS Finder
+.DS_Store
+
 cmd.txt
 valid_permission
 valid_permission/*
@@ -38,5 +41,8 @@ first_interim_report_v1.pdf
 .env.*
 
 # Generated data
-data/results/
-data/experiments.db
+data
+data/*
+
+.DS_Store
+*/.DS_Store
