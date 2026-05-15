@@ -74,31 +74,48 @@ class LLMClient:
         temperature: float | None = None,
         json_output: bool = False,
     ) -> str:
-        """发送对话请求并返回响应文本"""
+        """发送对话请求并返回响应文本（含429限流自动重试）"""
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message),
         ]
 
         model = self._build_model(json_output=json_output)
-        request_start = time.perf_counter()
-        try:
-            response = await model.ainvoke(
-                messages,
-                temperature=temperature if temperature is not None else self.temperature,
-            )
-            elapsed_ms = (time.perf_counter() - request_start) * 1000
-            content = response.content if hasattr(response, "content") else str(response)
-            result = content.strip()
+        max_attempts = self.max_retries + 1
 
-            if json_output and result:
-                # 验证JSON可解析
-                try:
-                    json.loads(result)
-                except json.JSONDecodeError as e:
-                    raise LLMError(f"LLM未返回合法JSON: {e}\n原始响应: {result[:200]}") from e
+        last_error: Exception | None = None
+        for attempt in range(max_attempts):
+            request_start = time.perf_counter()
+            try:
+                response = await model.ainvoke(
+                    messages,
+                    temperature=temperature if temperature is not None else self.temperature,
+                )
+                elapsed_ms = (time.perf_counter() - request_start) * 1000
+                content = response.content if hasattr(response, "content") else str(response)
+                result = content.strip()
 
-            return result
-        except Exception as e:
-            elapsed_ms = (time.perf_counter() - request_start) * 1000
-            raise LLMError(f"LLM调用失败（耗时{elapsed_ms:.0f}ms）: {e}") from e
+                if json_output and result:
+                    try:
+                        json.loads(result)
+                    except json.JSONDecodeError as e:
+                        raise LLMError(f"LLM未返回合法JSON: {e}\n原始响应: {result[:200]}") from e
+
+                return result
+            except Exception as e:
+                elapsed_ms = (time.perf_counter() - request_start) * 1000
+                error_str = str(e)
+
+                # 429限流：退避重试
+                if "429" in error_str or "rate limit" in error_str.lower() or "tpm limit" in error_str.lower():
+                    if attempt < max_attempts - 1:
+                        backoff = 2 ** attempt  # 指数退避: 1s, 2s, 4s
+                        print(f"  429限流，{backoff}s后重试 (第{attempt+1}/{max_attempts}次)")
+                        time.sleep(backoff)
+                        last_error = e
+                        continue
+
+                last_error = e
+                break
+
+        raise LLMError(f"LLM调用失败（耗时{elapsed_ms:.0f}ms）: {last_error}") from last_error

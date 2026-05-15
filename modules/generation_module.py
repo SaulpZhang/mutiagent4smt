@@ -9,6 +9,7 @@ from core.schemas import (
     SyntaxResult,
     VerificationInput,
 )
+from core.trace_logger import TraceLogger
 from prompt.manager import PromptManager
 from modules.verification_module import VerificationModule
 
@@ -36,6 +37,7 @@ class GenerationModule:
     async def run_intent_analysis(
         self,
         input_data: VerificationInput,
+        trace_logger: TraceLogger | None = None,
     ) -> ConstraintsList:
         """运行智能体一：意图理解，生成约束列表"""
         prompt = self.prompt_manager.load(
@@ -44,6 +46,15 @@ class GenerationModule:
             account_data=str(input_data.account_data),
         )
         result = await self.intent_agent.run(prompt=prompt)
+
+        if trace_logger:
+            trace_logger.log(
+                "intent_agent",
+                self.intent_agent.system_prompt,
+                prompt,
+                result.model_dump_json() if hasattr(result, "model_dump_json") else str(result),
+            )
+
         return result  # type: ignore[return-value]
 
     async def run_code_generation(
@@ -52,6 +63,8 @@ class GenerationModule:
         constraints: ConstraintsList,
         evaluation_feedback: EvaluationResult | None = None,
         current_code: SMTLibCode | None = None,
+        trace_logger: TraceLogger | None = None,
+        iteration: int = 1,
     ) -> SMTLibCode:
         """运行智能体二：生成SMT-LIB V2代码
 
@@ -65,6 +78,7 @@ class GenerationModule:
                 smt_code=code_text,
                 evaluation_result=evaluation_feedback.model_dump_json(),
             )
+            agent_label = "semantic_fix"
         else:
             prompt = self.prompt_manager.load(
                 "code_generation.txt",
@@ -72,14 +86,28 @@ class GenerationModule:
                 account_data=str(input_data.account_data),
                 constraints_list=constraints.model_dump_json(),
             )
+            agent_label = "code_gen"
 
         result = await self.code_gen_agent.run(prompt=prompt)
+
+        if trace_logger:
+            extra = f"Iteration: {iteration}" if iteration > 1 else ""
+            trace_logger.log(
+                agent_label,
+                self.code_gen_agent.system_prompt,
+                prompt,
+                result.code,
+                iteration=iteration,
+                extra=extra,
+            )
+
         return result  # type: ignore[return-value]
 
     async def syntax_fix_loop(
         self,
         code: SMTLibCode,
         max_retries: int | None = None,
+        trace_logger: TraceLogger | None = None,
     ) -> tuple[SMTLibCode, int]:
         """语法修正循环：检查语法并修正，直到通过或达到最大次数
 
@@ -92,6 +120,11 @@ class GenerationModule:
 
         while retry_count < max_retries:
             syntax_result = self.verification_module.check_syntax(current_code)
+            if trace_logger:
+                trace_logger.log_syntax_result(
+                    current_code.code, syntax_result.is_valid, syntax_result.errors, retry_count
+                )
+
             if syntax_result.is_valid:
                 return current_code, retry_count
 
@@ -102,6 +135,16 @@ class GenerationModule:
                 error_info=error_info,
             )
             result = await self.code_gen_agent.run(prompt=fix_prompt)
+
+            if trace_logger:
+                trace_logger.log(
+                    "syntax_fix",
+                    self.code_gen_agent.system_prompt,
+                    fix_prompt,
+                    result.code,
+                    iteration=retry_count + 1,
+                )
+
             current_code = result  # type: ignore[assignment]
             retry_count += 1
 

@@ -5,6 +5,7 @@ from typing import Any
 
 from config import settings
 from core.schemas import SMTLibCode
+from core.trace_logger import TraceLogger
 from modules.generation_module import GenerationModule
 from modules.evaluation_module import EvaluationModule
 from modules.output_module import OutputModule
@@ -18,6 +19,7 @@ class PipelineNodes:
 
     def __init__(self, prompt_type: str = "default", run_id: str = "") -> None:
         self._modules: dict[str, Any] = {}
+        self.run_id = run_id
 
         # 初始化所有依赖
         prompt_manager = PromptManager(prompt_type=prompt_type)
@@ -43,6 +45,14 @@ class PipelineNodes:
             raise RuntimeError(f"模块未注册: {name}")
         return m
 
+    def _make_logger(self, state: dict) -> TraceLogger | None:
+        """从state创建用例级日志记录器"""
+        instruct_id = state.get("instruct_id", "unknown")
+        run_id = self.run_id
+        attempt = state.get("extras", {}).get("attempt", 1)
+        log_dir = f"{settings.data_dir}/../data/traces/{run_id}"
+        return TraceLogger(log_dir, instruct_id, attempt=attempt)
+
     async def intent_agent_node(self, state: dict) -> dict:
         """智能体一：意图理解生成约束列表"""
         gen_module: GenerationModule = self._get("generation")
@@ -51,20 +61,28 @@ class PipelineNodes:
             return {"error_message": "缺少输入数据"}
         extras = dict(state.get("extras", {}))
         extras["gen_start_time"] = time.perf_counter()
+
+        trace_logger = self._make_logger(state)
+        extras["trace_logger"] = trace_logger
+
         try:
-            constraints = await gen_module.run_intent_analysis(input_data)
+            constraints = await gen_module.run_intent_analysis(input_data, trace_logger=trace_logger)
             return {"extras": extras, "constraints_list": constraints}
         except Exception as e:
             return {"extras": extras, "error_message": f"意图理解失败: {e}"}
 
     async def code_gen_node(self, state: dict) -> dict:
         """智能体二：代码生成或修正"""
+        if state.get("error_message"):
+            return {}
+
         gen_module: GenerationModule = self._get("generation")
         input_data = state.get("input_data")
         constraints = state.get("constraints_list")
         evaluation = state.get("evaluation_result")
         iteration = state.get("iteration", 0)
         current_code: SMTLibCode | None = state.get("smt_code")
+        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
 
         if not input_data or not constraints:
             return {"error_message": "缺少输入数据或约束列表"}
@@ -75,21 +93,31 @@ class PipelineNodes:
                     input_data, constraints,
                     evaluation_feedback=evaluation,
                     current_code=current_code,
+                    trace_logger=trace_logger,
+                    iteration=iteration,
                 )
             else:
-                result = await gen_module.run_code_generation(input_data, constraints)
+                result = await gen_module.run_code_generation(
+                    input_data, constraints, trace_logger=trace_logger,
+                )
             return {"smt_code": result}
         except Exception as e:
             return {"error_message": f"代码生成失败: {e}"}
 
     async def syntax_check_node(self, state: dict) -> dict:
         """语法检查节点（含自修正循环）"""
+        if state.get("error_message"):
+            return {}
+
         code: SMTLibCode | None = state.get("smt_code")
         if not code:
             return {"error_message": "缺少待检查的代码"}
 
+        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
         gen_module: GenerationModule = self._get("generation")
-        new_code, retry_count = await gen_module.syntax_fix_loop(code)
+        new_code, retry_count = await gen_module.syntax_fix_loop(
+            code, trace_logger=trace_logger,
+        )
 
         ver_module = self._get("verification")
         syntax_result = ver_module.check_syntax(new_code)
@@ -102,16 +130,22 @@ class PipelineNodes:
 
     async def evaluate_node(self, state: dict) -> dict:
         """智能体三：语义评估"""
+        if state.get("error_message"):
+            return {}
+
         eval_module: EvaluationModule = self._get("evaluation")
         code = state.get("smt_code")
         constraints = state.get("constraints_list")
         iteration = state.get("iteration", 0)
+        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
 
         if not code or not constraints:
             return {"error_message": "缺少代码或约束列表"}
 
         try:
-            result = await eval_module.evaluate(code, constraints)
+            result = await eval_module.evaluate(
+                code, constraints, trace_logger=trace_logger, iteration=iteration,
+            )
             return {"evaluation_result": result, "iteration": iteration + 1}
         except Exception as e:
             return {"error_message": f"评估失败: {e}", "iteration": iteration + 1}
@@ -137,11 +171,17 @@ class PipelineNodes:
         """验证节点：Z3执行"""
         ver_module: VerificationModule = self._get("verification")
         output = state.get("output_result")
+        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
+
         if not output or not output.code:
             return {}
 
         from core.schemas import VerificationResult
         is_exec, exec_out, exec_ms = ver_module.execute(output.code)
+
+        if trace_logger:
+            trace_logger.log_verify_result(output.code, exec_out, exec_ms)
+
         return {
             "verification_result": VerificationResult(
                 is_executable=is_exec,

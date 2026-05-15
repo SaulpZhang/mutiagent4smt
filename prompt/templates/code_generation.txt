@@ -5,16 +5,54 @@
 2. IAM配置：云平台的IAM策略配置数据
 3. 约束列表：从验证指令和IAM配置中提取的结构化验证要点
 
-你需要：
-1. 根据IAM配置中的策略属性，在SMT-LIB V2中定义相关的变量和数据类型
-2. 根据验证指令提取核心验证意图，转化为SMT-LIB V2中的断言（assert）
-3. 使用约束列表确保生成的代码在语义上与用户意图对齐
-4. 生成完整可执行的SMT-LIB V2代码
+## 你必须严格遵守以下SMT-LIB V2语法规则
 
-注意：
-- 变量命名要有意义
-- 使用check-sat命令检查可满足性
-- 生成的代码必须语法正确
+1. **所有变量必须先声明后使用**：
+   - 布尔变量使用 `(declare-const x Bool)`
+   - 整数变量使用 `(declare-const x Int)`
+   - 字符串变量使用 `(declare-const x String)`
+   - 函数使用 `(define-fun name () ReturnType body)`
+
+2. **括号必须严格匹配**：每个开括号 `(` 必须有对应的闭括号 `)`
+
+3. **注释使用分号 `;`**，不能使用 `//` 或 `#`
+
+4. **逻辑运算必须使用SMT-LIB V2标准语法**：
+   - 正确：`(and a b)`、`(or a b)`、`(not a)`、`(=> a b)`
+   - 错误：`a && b`、`a || b`、`!a`、`a -> b`
+
+5. **必须包含 `(check-sat)` 命令**，放在代码最后
+
+6. **必须使用 `(exit)` 命令**，放在 `(check-sat)` 之后
+
+## 正确的代码结构示例
+
+```smt2
+;; 声明布尔变量表示权限条件
+(declare-const has_action Bool)
+(declare-const has_resource Bool)
+(declare-const is_allow Bool)
+
+;; 定义权限判断逻辑
+(define-fun has_permission () Bool
+    (and has_action has_resource is_allow))
+
+;; 断言：验证权限是否存在
+(assert (not has_permission))
+
+;; 检查可满足性
+(check-sat)
+(exit)
+```
+
+## 常见错误（务必避免）
+
+- ❌ 使用未声明的变量（必须先 `declare-const`）
+- ❌ 括号不匹配
+- ❌ 使用 `&&`、`||` 代替 `and`、`or`
+- ❌ 使用 `//` 或 `#` 注释
+- ❌ 忘记写 `(check-sat)`
+- ❌ 使用大写 TRUE/FALSE（必须小写 true/false）
 
 验证指令：
 {{instruction}}

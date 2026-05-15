@@ -5,7 +5,6 @@
     python main.py run              # 运行系统流水线（全部126个用例）
     python main.py run --index 1         # 只运行第1个用例
     python main.py run --attempts 5       # 每个用例跑5次,计算PASS@1/3/5
-    python main.py run -p 10 --attempts 3 # 并行10,每个用例3次
     python main.py run --prompt-type v2   # 使用v2类型提示词
     python main.py stats                 # 查看实验结果统计
     python main.py init                  # 检查项目配置
@@ -35,10 +34,6 @@ def main() -> None:
         help="指定LLM模型名称",
     )
     run_parser.add_argument(
-        "-p", "--parallel", type=int, default=10,
-        help="并行处理数（默认10）",
-    )
-    run_parser.add_argument(
         "--attempts", type=int, default=5,
         help="每个用例重复尝试次数，用于计算PASS@K（默认5）",
     )
@@ -63,22 +58,19 @@ def main() -> None:
 
 
 async def run_pipeline(args: argparse.Namespace) -> None:
-    """运行系统流水线（支持并行处理）"""
+    """运行系统流水线"""
     from config import settings
     from core.schemas import ExperimentRecord
     from modules.input_module import InputModule
     from experiment.recorder import ExperimentRecorder
     from pipeline.graph import compile_pipeline
 
-    parallel = args.parallel or 1
     attempts = args.attempts or 1
     prompt_type = args.prompt_type or "default"
 
     print("=" * 60)
     print("  CodeV 系统流水线")
     print("  多LLM智能体集成的IAM策略形式化验证")
-    if parallel > 1:
-        print(f"  并行数: {parallel}")
     if attempts > 1:
         print(f"  尝试次数: {attempts}（用于PASS@1/3/5统计）")
     print(f"  提示词:    {prompt_type}")
@@ -110,20 +102,11 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     recorder.save_run_config(run_id, {
         "prompt_type": prompt_type,
         "model_used": settings.model_name,
-        "parallel": parallel,
         "attempts": attempts,
         "max_iterations": settings.max_iterations,
         "max_syntax_retries": settings.max_syntax_retries,
         "total_cases": total,
     })
-
-    # 写入实验记录日志
-    from pathlib import Path
-    log_path = Path(settings.data_dir).parent / "实验记录.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(f"[{run_id}] | {now_str} | {prompt_type} | {settings.model_name} | {parallel} | {attempts}\n")
 
     async def process_one(idx: int) -> dict:
         """处理单个用例（内部循环 attempts 次），返回该用例的结果摘要"""
@@ -166,7 +149,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 "max_syntax_retries": settings.max_syntax_retries,
                 "tracking": record,
                 "error_message": None,
-                "extras": {},
+                "extras": {"attempt": attempt_num},
             }
 
             try:
@@ -269,21 +252,13 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         return result
 
-    # 并发处理所有用例（每用例内部循环 attempts 次）
-    if parallel > 1 and total > 1:
-        batch_size = (total + parallel - 1) // parallel
-        batches = [indices[i:i + batch_size] for i in range(0, total, batch_size)]
-        print(f"  分批: {len(batches)} 批, 每批 ~{batch_size} 条")
-        if attempts > 1:
-            print(f"  每用例内部循环 {attempts} 次, 共 {total * attempts} 次 Agent 调用\n")
-
-        async def run_batch(batch: list[int]) -> list[dict]:
-            return [await process_one(idx) for idx in batch]
-
-        batch_results_lists = await asyncio.gather(*[run_batch(b) for b in batches])
-        all_results = [r for blist in batch_results_lists for r in blist]
-    else:
-        all_results = [await process_one(idx) for idx in indices]
+    # 串行处理所有用例
+    if attempts > 1:
+        print(f"  每用例循环 {attempts} 次, 共 {total * attempts} 次 Agent 调用\n")
+    from tqdm import tqdm
+    all_results = []
+    for idx in tqdm(indices, desc="处理用例", unit="用例"):
+        all_results.append(await process_one(idx))
 
     # PASS@K 统计
     pass_stats = recorder.get_pass_at_k_stats(run_id=run_id)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agent.base import BaseAgent
 from core.schemas import ConstraintsList, EvaluationResult, SMTLibCode
+from core.trace_logger import TraceLogger
 from prompt.manager import PromptManager
 
 
@@ -26,6 +27,8 @@ class EvaluationModule:
         self,
         code: SMTLibCode,
         constraints: ConstraintsList,
+        trace_logger: TraceLogger | None = None,
+        iteration: int = 1,
     ) -> EvaluationResult:
         """运行智能体三：评估代码是否满足约束列表"""
         prompt = self.prompt_manager.load(
@@ -34,4 +37,14 @@ class EvaluationModule:
             constraints_list=constraints.model_dump_json(),
         )
         result = await self.evaluation_agent.run(prompt=prompt)
+
+        if trace_logger:
+            trace_logger.log(
+                "eval_agent",
+                self.evaluation_agent.system_prompt,
+                prompt,
+                result.model_dump_json() if hasattr(result, "model_dump_json") else str(result),
+                iteration=iteration,
+            )
+
         return result  # type: ignore[return-value]

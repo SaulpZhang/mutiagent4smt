@@ -41,19 +41,19 @@ class AgentBuilder:
         return IntentUnderstandingAgent(
             name="intent_understanding",
             system_prompt=self.SYSTEM_PROMPTS["intent"],
-            llm_client=self._build_client(settings.agnet_1_model),
+            llm_client=self._build_client(settings.agent_1_model),
         )
 
     def build_code_gen_agent(self) -> CodeGenerationAgent:
         return CodeGenerationAgent(
             name="code_generation",
             system_prompt=self.SYSTEM_PROMPTS["code_gen"],
-            llm_client=self._build_client(settings.agnet_2_model),
+            llm_client=self._build_client(settings.agent_2_model),
         )
 
     def build_eval_agent(self) -> EvaluationAgent:
         return EvaluationAgent(
             name="evaluation",
             system_prompt=self.SYSTEM_PROMPTS["eval"],
-            llm_client=self._build_client(settings.agnet_3_model),
+            llm_client=self._build_client(settings.agent_3_model),
         )

@@ -23,9 +23,9 @@ class Settings(BaseSettings):
     llm_max_retries: int = 3
 
     # 各Agent独立模型配置（如不设置则使用 common_model）
-    agnet_1_model: str = ""   # Agent 1 意图理解
-    agnet_2_model: str = ""   # Agent 2 代码生成
-    agnet_3_model: str = ""   # Agent 3 评估
+    agent_1_model: str = ""   # Agent 1 意图理解
+    agent_2_model: str = ""   # Agent 2 代码生成
+    agent_3_model: str = ""   # Agent 3 评估
 
     # 非Agent通用模型（3个Agent以外的LLM调用使用此模型）
     common_model: str = ""
