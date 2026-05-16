@@ -88,7 +88,28 @@ class PipelineNodes:
             return {"error_message": "缺少输入数据或约束列表"}
 
         try:
-            if iteration > 0 and evaluation:
+            regeneration_count = state.get("regeneration_count", 0)
+            if regeneration_count > 0:
+                syntax = state.get("syntax_result")
+                errors = syntax.errors if syntax and syntax.errors else []
+                extra_hint = (
+                    f"\n\n## 前次代码语法错误（重新生成）\n"
+                    f"前次SMT代码有语法错误，请从头重新生成干净的代码。\n"
+                    f"错误信息：{'; '.join(errors[:3])}"
+                ) if errors else (
+                    "\n\n## 前次代码语法错误（重新生成）\n"
+                    "前次SMT代码有语法错误，请从头重新生成干净的代码。"
+                )
+                result = await gen_module.run_code_generation(
+                    input_data, constraints, trace_logger=trace_logger,
+                    extra_hint=extra_hint,
+                )
+                return {
+                    "smt_code": result,
+                    "regeneration_count": regeneration_count + 1,
+                    "syntax_retry_count": 0,  # 重置，让新代码走完整语法检查
+                }
+            elif iteration > 0 and evaluation:
                 result = await gen_module.run_code_generation(
                     input_data, constraints,
                     evaluation_feedback=evaluation,

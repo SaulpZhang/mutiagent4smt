@@ -64,6 +64,7 @@ class GenerationModule:
         current_code: SMTLibCode | None = None,
         trace_logger: TraceLogger | None = None,
         iteration: int = 1,
+        extra_hint: str = "",
     ) -> SMTLibCode:
         """运行智能体二：生成SMT-LIB V2代码
 
@@ -86,6 +87,9 @@ class GenerationModule:
                 constraints_list=constraints.model_dump_json(),
             )
             agent_label = "code_gen"
+
+        if extra_hint:
+            prompt += extra_hint
 
         result = await self.code_gen_agent.run(prompt=prompt)
 

@@ -147,6 +147,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 "iteration": 0,
                 "max_iterations": settings.max_iterations,
                 "max_syntax_retries": settings.max_syntax_retries,
+                "regeneration_count": 0,
                 "tracking": record,
                 "error_message": None,
                 "extras": {"attempt": attempt_num},

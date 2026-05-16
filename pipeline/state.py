@@ -48,6 +48,7 @@ class PipelineState(TypedDict):
     iteration: int
     max_iterations: int
     max_syntax_retries: int
+    regeneration_count: int  # 语法修复耗尽后的重生成次数
 
     # 实验追踪
     tracking: ExperimentRecord | None

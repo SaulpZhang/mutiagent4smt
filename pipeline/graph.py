@@ -31,12 +31,13 @@ from pipeline.nodes import PipelineNodes
 from pipeline.state import PipelineState
 
 
-def decide_syntax_route(state: PipelineState) -> Literal["syntax_fix", "evaluate", "output"]:
+def decide_syntax_route(state: PipelineState) -> Literal["syntax_fix", "evaluate", "regenerate", "output"]:
     """语法检查后的路由
 
     - 语法通过 → evaluate
     - 语法不通过且未达上限 → syntax_fix
-    - 语法不通过且达上限 → output
+    - 语法不通过且达上限，但重生成次数未达上限 → regenerate（重新生成）
+    - 语法不通过且达上限，且重生成也达上限 → output
     """
     syntax = state.get("syntax_result")
     if syntax is None:
@@ -47,8 +48,12 @@ def decide_syntax_route(state: PipelineState) -> Literal["syntax_fix", "evaluate
 
     retry_count = state.get("syntax_retry_count", 0)
     max_retries = state.get("max_syntax_retries", 5)
+    regeneration_count = state.get("regeneration_count", 0)
+    max_regenerations = 2
 
     if retry_count >= max_retries:
+        if regeneration_count < max_regenerations:
+            return "regenerate"
         return "output"
 
     return "syntax_fix"
@@ -109,6 +114,7 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> State
         {
             "syntax_fix": "syntax_fix",
             "evaluate": "evaluate",
+            "regenerate": "code_gen",
             "output": "output",
         },
     )
