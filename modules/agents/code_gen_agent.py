@@ -36,18 +36,17 @@ class CodeGenerationAgent(BaseAgent):
         return SMTLibCode(code=code)
 
     def _extract_code(self, text: str) -> str:
-        """从LLM响应中提取SMT-LIB V2代码块"""
+        """从LLM响应中提取SMT-LIB V2代码块（取最后一个代码块，因为CoT可能包含中间片段）"""
         import re
 
-        # 尝试匹配 ```smt2 ... ``` 或 ```lisp ... ``` 或 ``` ... ```
         patterns = [
             r'```(?:smt2|lisp|smt|z3)\s*\n(.*?)```',
             r'```\s*\n(.*?)```',
             r'```(.*?)```',
         ]
         for pattern in patterns:
-            match = re.search(pattern, text, re.DOTALL)
-            if match:
-                return match.group(1).strip()
+            matches = list(re.finditer(pattern, text, re.DOTALL))
+            if matches:
+                return matches[-1].group(1).strip()
 
         return ""

@@ -1,22 +1,157 @@
-你是一个SMT-LIB V2代码优化专家。生成的SMT-LIB V2代码在语义评估中未完全通过，请根据评估反馈修改代码，使其满足所有约束要求。
+你是一个SMT-LIB V2代码优化专家。生成的SMT-LIB V2代码在语义评估中未完全通过，请根据评估反馈修改代码。
 
-## SMT-LIB V2语法规则（严格遵守）
+背景说明：IAM配置采用**华为云IAM格式**（Version 5.0），涉及OBS存储桶策略和委托信任策略。
+- Principal类型为 `"IAM"`（如 `"Principal": {"IAM": ["account1"]}`）
+- Action使用华为云命名（如 `sts:agencies:assume`、`obs:object:listBucket`）
+- Condition操作符包括 `stringequals`、`stringmatch`、`forallvalues:stringequals`、`foranyvalue:stringmatch`、`null`、`numericequals`、`numericgreaterthan`、`bool`、`dateequals`、`ipaddress` 等
+- Condition键使用 `g:` 前缀（如 `g:PrincipalUrn`、`g:RequestTag/xxx`、`g:MFAAge`、`g:MFAPresent`、`g:PrincipalAccount`）
 
-1. 所有变量必须先声明后使用：`(declare-const name Bool)`
-2. 注释使用 `;`，不能使用 `//` 或 `#`
+SMT-LIB V2语法规则：
+1. 所有变量必须先声明后使用
+2. 注释使用 `;`
 3. 逻辑运算使用 `and`、`or`、`not`、`=>`
 4. 使用小写 true/false
 5. 必须包含 `(check-sat)` 和 `(exit)`
 6. 括号必须严格匹配
+7. **⚠️ 字符串中禁止使用 `\"`（反斜杠+引号）** — SMT-LIB V2不支持反斜杠转义。必须将嵌套JSON结构拆分为独立变量：
+   - ✅ `{"ID": ["*"]}` → `principal_type = "ID"`, `principal_value = "*"`
+   - ✅ `{"stringequals": {"g:PrincipalType": ["User"]}}` → `condition_operator = "stringequals"`, `condition_key = "g:PrincipalType"`, `condition_value = "User"`
+   - ❌ 不要编码成 `"{\\"ID\\": [\\"*\\"]}"`
+
+## 核心SMT建模模式
+
+### 存在性标志 + 值分离
+每个字段声明两个变量：`has_X` (Bool) 和 `X_value` (对应类型)。
+```smt2
+(declare-const s1_has_effect Bool)
+(declare-const s1_effect_value String)
+```
+
+### 验证规则必须使用域知识编码（而非与自身比较）
+**最重要**：验证函数必须检查值是否属于有效值集合，而不是与assert固定的值比较。
+
+```smt2
+;; ❌ 错误：与自身比较（永远为真）
+(define-fun action_valid () Bool
+    (=> s1_has_action (= s1_action_value "listBucket")))
+
+;; ✅ 正确：检查值是否在有效值集合（能检测无效值）
+(define-fun action_valid () Bool
+    (=> s1_has_action
+        (or (= s1_action_value "listBucket")
+            (= s1_action_value "obs:object:listBucket")
+            (= s1_action_value "sts:agencies:assume")
+            (= s1_action_value "*"))))
+```
+
+### 条件操作符与键类型兼容性
+如果策略包含 Condition，必须验证操作符和键的类型是否兼容：
+
+| 操作符类型 | 兼容的键类型 |
+|------------|-------------|
+| stringequals, stringmatch 等 | g:PrincipalType, g:PrincipalAccount, g:UserName 等字符串类型键 |
+| numericequals, numericgreaterthan 等 | g:MFAAge 等数字类型键 |
+| dateequals, dateless, dategreater 等 | g:CurrentTime, g:TokenIssueTime 等日期类型键 |
+| bool | g:MFAPresent, g:SecureTransport, g:PrincipalIsRootUser 等布尔类型键 |
+| ipaddress, ipaddressnot | g:SourceIp, g:VpcSourceIp 等IP类型键 |
+| null | 任何键（兼容所有类型）|
+| forallvalues:stringequals 等多值操作符 | 字符串类型键 |
+
+类型不兼容 ⇒ 策略无效。
+
+## 修改步骤
+
+请按照以下步骤逐步修改：
+
+### 第一步：分析评估反馈
+仔细阅读评估反馈中标记为"not_satisfied"的约束，理解原因。
+
+### 第二步：定位代码中的问题
+检查当前SMT代码：
+1. 验证规则使用的是"与自身比较"还是"有效值集合检查"？
+2. 如果涉及Condition，是否检查了操作符与键的类型兼容性？
+3. 是否编码了IAM配置的实际值？
+
+### 第三步：修改代码
+1. 修复所有验证规则，使用有效值集合检查模式
+2. 添加条件操作符与键的类型兼容性检查
+3. 确保验证逻辑能正确失败（返回unsat）当策略无效时
+4. 删除冗余的死代码
+
+### ⚠️ 绝对禁止：不要修改IAM配置的实际数据
+
+以下断言编码了IAM配置JSON中的实际值，是**固定不变的事实（ground truth）**：
+
+```smt2
+(assert (= s1_has_effect true))
+(assert (= s1_effect_value "Allow"))
+(assert (= s1_condition_operator "numericequals"))  ;; 这是原始配置中的实际值
+(assert (= s1_condition_key "g:MFAPresent"))         ;; 这是原始配置中的实际值
+```
+
+**绝对不要修改这些值！** 即使验证规则检测到配置无效（如操作符类型不匹配），这恰好是正确的行为——配置本身就无效。修改配置值会让验证永远通过（永远返回 sat），从而使语义验证失去意义。
+
+如果你看到如下评估反馈：
+- "操作符类型不兼容" → 这表示**配置本身无效**，验证正确。**不要修改配置值**，只需确保验证规则编码正确
+- "缺少xxx字段验证" → 这是验证逻辑缺失，**可以添加新的验证函数和约束**
+
+### ⚠️ 空Condition处理规则
+
+当IAM配置中的 `"Condition": {}` 为空对象时：
+- 设置 `(assert (= s1_has_condition false))`，表示没有实际条件需要验证
+- 不要设置任何 condition_operator、condition_key、condition_value 的值
+- **严禁为空的Condition编造操作符和键值**（如 `"numericequals"` + `"g:MFAAge"`）
+
+```smt2
+;; ✅ 正确：空Condition
+(assert (= s1_has_condition false))
+
+;; ❌ 错误：为空的Condition编造不存在的值
+(assert (= s1_has_condition true))
+(assert (= s1_condition_operator "numericequals"))  ;; 配置中不存在！
+(assert (= s1_condition_key "g:MFAAge"))            ;; 配置中不存在！
+```
+
+### ⚠️ 禁止使用Z3 Set类型
+
+必须使用 `declare-const` + `define-fun (or ...)` 模式进行值验证，禁止使用 Z3 的 Set 类型：
+```smt2
+;; ✅ 正确
+(define-fun effect_value_valid () Bool
+    (=> s1_has_effect (or (= s1_effect_value "Allow") (= s1_effect_value "Deny"))))
+
+;; ❌ 禁止：使用Set类型
+(define-fun effect_valid_values () (Set String)
+    (as (set "Allow" "Deny") (Set String)))  ;; 语法在不同Z3版本中可能不兼容
+```
+
+### ⚠️ 绝对禁止2：不要添加IAM策略中不存在的交叉字段验证规则
+
+以下验证规则在华为云IAM规范中**不存在**，**绝对不要添加**：
+
+```smt2
+;; ❌ 错误：Action和Condition之间没有兼容性约束
+(define-fun s1_action_condition_compatible () Bool false)  ;; 禁止！
+
+;; ❌ 错误：Principal和Action之间没有兼容性约束
+(define-fun s1_principal_action_compatible () Bool ...)     ;; 禁止！
+```
+
+**允许的验证规则仅限于**：
+1. ✅ 每个字段的值是否属于华为云IAM规范中定义的`有效值集合`（如 Effect 必须是 Allow 或 Deny）
+2. ✅ Condition操作符与Condition键的类型是否兼容（这是华为云IAM规范中明确定义的块内约束）
+3. ✅ 字段的存在性检查
+
+## 输出要求
+
+在最后输出完整的修改后的SMT-LIB V2代码，用 ```smt2 代码块包裹。确保：
+- 修复了所有"not_satisfied"的约束
+- 没有破坏已满足的约束
+- 验证规则使用有效值集合检查（能与assert的值不同并导致unsat）
+- 条件操作符与键类型兼容性已检查
 
 当前SMT-LIB V2代码：
 {{smt_code}}
 
 评估反馈（未满足的约束）：
 {{evaluation_result}}
-
-要求：
-- 针对评估反馈中标记为"not_satisfied"的约束进行修改
-- 不要破坏已经满足的约束对应的代码逻辑
-- 确保修改后的代码语法正确
-- 输出完整的修改后的代码

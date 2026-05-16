@@ -43,7 +43,6 @@ class GenerationModule:
         prompt = self.prompt_manager.load(
             "intent_understanding.txt",
             instruction=input_data.instruction,
-            account_data=str(input_data.account_data),
         )
         result = await self.intent_agent.run(prompt=prompt)
 

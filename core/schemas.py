@@ -21,7 +21,7 @@ class Constraint(BaseModel):
 
     id: str = Field(description="约束唯一标识")
     description: str = Field(description="约束内容的自然语言描述")
-    category: str = Field(description="约束分类：instruction_derived 或 policy_derived")
+    category: str = Field(description="约束分类：field_existence / field_specification / policy_validity")
 
 
 class ConstraintsList(BaseModel):

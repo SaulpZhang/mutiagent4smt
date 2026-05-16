@@ -21,7 +21,6 @@ class IntentUnderstandingAgent(BaseAgent):
         response = await self.llm_client.chat(
             system_prompt=self.system_prompt,
             user_message=prompt,
-            json_output=True,
         )
 
         return self._parse_response(response)
@@ -48,9 +47,23 @@ class IntentUnderstandingAgent(BaseAgent):
         return ConstraintsList(constraints=constraints)
 
     def _extract_json(self, text: str) -> dict:
-        """从文本中提取JSON块"""
+        """从文本中提取JSON块（支持CoT：在自由文本中查找首个合法JSON对象）"""
         import re
+        # 查找所有可能的JSON对象边界
+        for match in re.finditer(r'\{.*?\}', text, re.DOTALL):
+            candidate = match.group()
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict) and "constraints" in data:
+                    return data
+            except json.JSONDecodeError:
+                continue
+        # 放宽：尝试更大的匹配
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
-            return json.loads(match.group())
+            candidate = match.group()
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError:
+                pass
         return {"constraints": []}

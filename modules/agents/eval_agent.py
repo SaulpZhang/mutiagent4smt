@@ -70,7 +70,17 @@ class EvaluationAgent(BaseAgent):
     def _extract_json(self, text: str) -> dict:
         """从文本中提取JSON块"""
         import re
+        for match in re.finditer(r'\{.*?\}', text, re.DOTALL):
+            try:
+                data = json.loads(match.group())
+                if isinstance(data, dict) and ("items" in data or "all_satisfied" in data):
+                    return data
+            except json.JSONDecodeError:
+                continue
         match = re.search(r'\{.*\}', text, re.DOTALL)
         if match:
-            return json.loads(match.group())
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
         return {"items": [], "all_satisfied": False}

@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import re
+
 from agent.base import BaseAgent
 from core.schemas import ConstraintsList, EvaluationResult, SMTLibCode
 from core.trace_logger import TraceLogger
 from prompt.manager import PromptManager
+
+
+def strip_smt_comments(code: str) -> str:
+    """去除SMT-LIB V2代码中的注释（;行注释），避免注释干扰评估"""
+    return re.sub(r";[^\n]*", "", code)
 
 
 class EvaluationModule:
@@ -31,9 +38,10 @@ class EvaluationModule:
         iteration: int = 1,
     ) -> EvaluationResult:
         """运行智能体三：评估代码是否满足约束列表"""
+        clean_code = strip_smt_comments(code.code)
         prompt = self.prompt_manager.load(
             "evaluation.txt",
-            smt_code=code.code,
+            smt_code=clean_code,
             constraints_list=constraints.model_dump_json(),
         )
         result = await self.evaluation_agent.run(prompt=prompt)

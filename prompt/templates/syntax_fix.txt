@@ -2,7 +2,7 @@
 
 ## 常见语法错误及修复方法
 
-1. **"unknown constant" 或 "undeclared constant"** — 使用了未声明的变量，添加 `(declare-const var Bool)` 或 `(declare-const var Int)`
+1. **"unknown constant" 或 "undeclared constant"** — 使用了未声明的变量，添加 `(declare-const var Bool)` 或 `(declare-const var Int)` 或 `(declare-const var String)`
 
 2. **"invalid expression, sort mismatch"** — 类型不匹配（如Bool和Int混用），检查每个操作数的类型
 
@@ -15,6 +15,11 @@
 6. **注释必须使用 `;`**，不是 `//` 或 `#`
 
 7. **逻辑运算使用 `and`、`or`、`not`、`=>`**，不是 `&&`、`||`、`!`、`->`
+
+8. **⚠️ 字符串中的反斜杠 `\"` 会导致语法错误** — SMT-LIB V2不支持反斜杠转义。如果看到类似 `"{\\"ID\\": [\\"*\\"]}"` 的代码，必须修改：
+   - 将嵌套的JSON结构拆分为多个独立变量，而不是编码为单个字符串
+   - 例如 `"Principal": {"ID": ["*"]}` 应拆分为 `principal_type = "ID"` 和 `principal_value = "*"`
+   - 例如 `"Action": ["listBucket"]` 应建模为 `action_value = "listBucket"`
 
 ## 正确示例
 

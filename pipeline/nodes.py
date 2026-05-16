@@ -180,7 +180,7 @@ class PipelineNodes:
         is_exec, exec_out, exec_ms = ver_module.execute(output.code)
 
         if trace_logger:
-            trace_logger.log_verify_result(output.code, exec_out, exec_ms)
+            trace_logger.log_verify_result(output.code.code, exec_out, exec_ms)
 
         return {
             "verification_result": VerificationResult(

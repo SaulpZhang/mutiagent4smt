@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     thinking: bool = True           # 是否启用thinking模式
 
     # Pipeline
-    max_iterations: int = 10
+    max_iterations: int = 3
     max_syntax_retries: int = 5
 
     # Data paths

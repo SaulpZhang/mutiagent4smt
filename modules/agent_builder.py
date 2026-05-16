@@ -16,12 +16,12 @@ class AgentBuilder:
 
     SYSTEM_PROMPTS = {
         "intent": (
-            "你是一个IAM策略分析专家。你的任务是根据用户的验证指令和IAM配置，"
+            "你是一个IAM策略分析专家。你的任务是根据用户的验证指令，"
             "生成结构化的约束列表。请以JSON格式输出，包含constraints数组，"
             "每个约束包含id、description、category字段。"
         ),
         "code_gen": (
-            "你是一个SMT-LIB V2代码生成专家。你的任务是根据验证指令、IAM配置和约束列表，"
+            "你是一个SMT-LIB V2代码生成专家。你的任务是根据验证指令、华为云IAM配置和约束列表，"
             "生成可执行的SMT-LIB V2代码。代码必须使用SMT-LIB V2语法，"
             "包含变量定义、断言和check-sat命令。"
         ),
