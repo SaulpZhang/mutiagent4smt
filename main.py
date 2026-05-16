@@ -41,6 +41,18 @@ def main() -> None:
         "--prompt-type", type=str, default="default",
         help="提示词类型（默认default，对应 templates/ 目录）",
     )
+    run_parser.add_argument(
+        "--runid", type=str, default=None,
+        help="自定义实验ID，不指定则自动生成",
+    )
+    run_parser.add_argument(
+        "--from", type=int, default=None, dest="from_",
+        help="起始用例编号（左开右闭，即不包含此用例），从1开始",
+    )
+    run_parser.add_argument(
+        "--to", type=int, default=None,
+        help="结束用例编号（左开右闭，即包含此用例），从1开始",
+    )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
     subparsers.add_parser("init", help="初始化项目（检查配置和依赖）")
@@ -83,13 +95,17 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     pairs = input_module.load_all_pairs()
     answers = input_module.load_answers()
 
-    run_id = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    run_id = args.runid or datetime.now().strftime("run_%Y%m%d_%H%M%S")
     print(f"  实验编号: {run_id}\n")
 
     if args.index is not None:
         indices = [args.index - 1]
         total = 1
         print(f"运行单用例: 第 {args.index} 个\n")
+    elif args.from_ is not None and args.to is not None:
+        indices = list(range(args.from_, args.to))
+        total = len(indices)
+        print(f"运行用例 {args.from_}（不含）到 {args.to}（含），共 {total} 个\n")
     else:
         indices = list(range(len(pairs)))
         total = len(pairs)
@@ -165,6 +181,15 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                     record.status = "error"
                     record.error_message = error_msg
                     record.total_time_ms = elapsed_ms
+                    # 即使出错也保存SMT代码
+                    code = final_state.get("smt_code")
+                    if code:
+                        record.generated_code = code.code
+                        from pathlib import Path as _Path
+                        code_dir = _Path(settings.results_dir) / run_id
+                        code_dir.mkdir(parents=True, exist_ok=True)
+                        code_path = code_dir / f"{case.instruct_id}.smt2"
+                        _Path(code_path).write_text(code.code)
                     saved_record = record
                     print(f"  [{case_num}/{total}] {case.instruct_id}[A{attempt_num}] [!] {error_msg}")
                 else:
@@ -306,8 +331,8 @@ def show_stats() -> None:
     print("  实验结果统计")
     print("=" * 60)
     print(f"  总用例:     {stats.get('total', 0)}")
-    print(f"  成功:       {stats.get('success_count', 0)}")
-    print(f"  错误:       {stats.get('error_count', 0)}")
+    print(f"  成功:       {stats.get('success_count') or 0}")
+    print(f"  错误:       {stats.get('error_count') or 0}")
     print(f"  {'─' * 47}")
     # 约束满足率
     csr = stats.get('constraint_satisfaction_rate')
@@ -324,8 +349,8 @@ def show_stats() -> None:
         print(f"  标签匹配:     {lmc}/{ltc}")
         print(f"  标签准确率:   {la:.2%}")
     print(f"  {'─' * 47}")
-    print(f"  平均耗时:     {stats.get('avg_time_ms', 0):.0f}ms")
-    print(f"  平均迭代:     {stats.get('avg_iterations', 0):.1f}")
+    print(f"  平均耗时:     {(stats.get('avg_time_ms') or 0):.0f}ms")
+    print(f"  平均迭代:     {(stats.get('avg_iterations') or 0):.1f}")
     print("=" * 60)
 
 
