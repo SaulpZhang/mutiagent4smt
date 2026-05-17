@@ -436,13 +436,14 @@ def _gen_condition_compatibility(pfx: str, conditions: list[tuple[str, str, str]
         elif op_type == "unknown":
             lines.append(f"(define-fun {pfx}_cond_{cc}_operator_type () Bool")
             lines.append(f"    true  ; unknown operator type")
+            lines.append(")")
 
         # key type check
         if op_type == "null":
             lines.append(f"(define-fun {pfx}_cond_{cc}_compatible () Bool")
             lines.append(f"    (or (str.contains {pfx}_cond_{cc}_value \"true\") (= {pfx}_cond_{cc}_value \"false\"))")
         elif op_type == "unknown":
-            lines.append(f"(define-fun {pfx}_cond_{cc}_compatible () Bool true)")
+            lines.append(f"(define-fun {pfx}_cond_{cc}_compatible () Bool true")
         elif op_type == "multi_value":
             lines.append(f"(define-fun {pfx}_cond_{cc}_key_type () Bool")
             # Multi-value requires string keys
@@ -450,7 +451,7 @@ def _gen_condition_compatibility(pfx: str, conditions: list[tuple[str, str, str]
             parts = [f"(= {key_var} {_smt_escape(k)})" for k in all_string_keys]
             lines.append(f"    (or {' '.join(parts)})" if parts else "    true")
             lines.append(")")
-            lines.append(f"(define-fun {pfx}_cond_{cc}_compatible () Bool {pfx}_cond_{cc}_key_type)")
+            lines.append(f"(define-fun {pfx}_cond_{cc}_compatible () Bool {pfx}_cond_{cc}_key_type")
         else:
             # operator type check
             all_ops = _get_ops_by_type(op_type)

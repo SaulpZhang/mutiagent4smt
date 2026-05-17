@@ -19,7 +19,7 @@ STRING_OPS = {
 
 NUMERIC_OPS = {
     "numericequals", "numericnotequals", "numericgreaterthan",
-    "numericlessthan", "numericgreaterthanorequals", "numericlessthanequals",
+    "numericlessthan", "numericgreaterthanequals", "numericlessthanequals",
     "numericequalsnot", "numberinrange",
     "numericgreaterthanifexists",
 }

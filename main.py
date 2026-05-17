@@ -34,8 +34,8 @@ def main() -> None:
         help="指定LLM模型名称",
     )
     run_parser.add_argument(
-        "--attempts", type=int, default=5,
-        help="每个用例重复尝试次数，用于计算PASS@K（默认5）",
+        "--attempts", type=int, default=1,
+        help="每个用例重复尝试次数，用于计算PASS@K（默认1）",
     )
     run_parser.add_argument(
         "--prompt-type", type=str, default="default",

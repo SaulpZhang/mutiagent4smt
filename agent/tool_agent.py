@@ -120,12 +120,35 @@ class ToolAgent(BaseAgent):
             )),
         ]
 
-        # ── 执行 ReAct 循环 ──
+        # ── 执行 ReAct 循环（stream 模式输出详细 trace） ──
         print(f"  [ToolAgent] 启动 LangGraph ReAct（最大 {self.max_steps} 步）")
-        result = await agent.ainvoke(
+        print(f"  ── ReAct Trace ──")
+        collected_messages: list = []
+        react_step = 0
+
+        async for event in agent.astream(
             {"messages": messages},
             {"recursion_limit": self.max_steps},
-        )
+        ):
+            for node_name, data in event.items():
+                msgs = data.get("messages", [])
+                for msg in msgs:
+                    collected_messages.append(msg)
+                    if node_name == "agent":
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                args_str = json.dumps(tc["args"], ensure_ascii=False)
+                                print(f"  [{react_step}] LLM → {tc['name']}({args_str[:300]})")
+                        elif msg.content and msg.content.strip():
+                            c = msg.content.strip()
+                            print(f"  [{react_step}] LLM: {c[:200]}")
+                    elif node_name == "tools":
+                        c = msg.content.strip() if msg.content else ""
+                        if len(c) > 150:
+                            print(f"  [{react_step}] 工具 {msg.name}: {len(c)} 字符")
+                        else:
+                            print(f"  [{react_step}] 工具 {msg.name}: {c}")
+            react_step += 1
 
         # ── 优先使用自动组装的代码（smt_assemble 已从 collected 收集） ──
         if collected.get("smt_assemble"):
@@ -141,13 +164,13 @@ class ToolAgent(BaseAgent):
                 print(f"  [ToolAgent] 自动组装代码 ({len(code)} 字符)")
             else:
                 # 最终 fallback: 从 LLM 输出提取
-                final_messages = result.get("messages", [])
-                code = self._extract_final_code(final_messages)
+                code = self._extract_final_code(collected_messages)
                 print(f"  [ToolAgent] 从 LLM 输出提取代码 ({len(code)} 字符)")
 
         if not code or len(code.strip()) < 20:
             code = "(check-sat)\n(exit)"
 
+        print(f"  ── ReAct 结束 ({react_step} 步) ──")
         return SMTLibCode(code=code)
 
     def _build_langchain_tools(
@@ -182,7 +205,7 @@ class ToolAgent(BaseAgent):
         """创建一个自动注入上下文的生成工具。"""
         props = td.parameters.get("properties", {})
 
-        def wrapped(**kwargs: Any) -> str:
+        def wrapped(statements_json: str = "", **kwargs: Any) -> str:
             # 自动注入上下文参数（覆写 LLM 传入的值）
             kwargs["statements_json"] = collected.get("statements_json", "")
             if "constraints_json" in props:
@@ -192,6 +215,7 @@ class ToolAgent(BaseAgent):
 
             result = td.fn(**kwargs)
             collected[td.name] = result
+            print(f"    ✓ {td.name}: {len(result)} 字符")
             return result
 
         return Tool.from_function(
@@ -202,7 +226,7 @@ class ToolAgent(BaseAgent):
 
     def _make_assemble_tool(self, td: ToolDef, collected: dict[str, str]) -> Tool:
         """创建组装工具：从 collected 收集代码段，忽略 LLM 传入的参数。"""
-        def wrapped(**kwargs: Any) -> str:
+        def wrapped(code_sections: list | None = None, **kwargs: Any) -> str:
             sections = [
                 collected.get(k, "")
                 for k in ["smt_declare_variables", "smt_assert_config", "smt_validation_funcs",
@@ -211,6 +235,7 @@ class ToolAgent(BaseAgent):
             ]
             result = td.fn(sections)
             collected[td.name] = result
+            print(f"    ✓ {td.name}: {len(result)} 字符 ({len(sections)} 段)")
             return result
 
         return Tool.from_function(
@@ -221,8 +246,10 @@ class ToolAgent(BaseAgent):
 
     def _make_verify_tool(self, td: ToolDef) -> Tool:
         """创建语法检查工具。"""
-        def wrapped(code: str) -> str:
-            return td.fn(code)
+        def wrapped(code: str = "", **kwargs: Any) -> str:
+            result = td.fn(code)
+            print(f"    ✓ {td.name}: {len(code)} 字符 → {'通过' if 'valid' in result.lower() or 'ok' in result.lower() else result[:80]}")
+            return result
 
         return Tool.from_function(
             name=td.name,
