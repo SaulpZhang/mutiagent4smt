@@ -172,27 +172,14 @@ class LLMClient:
                         raise LLMError(f"LLM未返回合法JSON: {e}\n原始响应: {result[:200]}") from e
 
                 return result
-            except asyncio.TimeoutError:
-                elapsed_ms = (time.perf_counter() - request_start) * 1000
-                last_error = TimeoutError(f"LLM请求超时（{self.request_timeout}s）")
-                if attempt < max_attempts - 1:
-                    print(f"  请求超时，5s后重试 (第{attempt+1}/{max_attempts}次)")
-                    await asyncio.sleep(5)
-                    continue
-                break
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - request_start) * 1000
-                error_str = str(e)
-
-                # 429限流：固定60s退避后重试
-                if "429" in error_str or "rate limit" in error_str.lower() or "tpm limit" in error_str.lower():
-                    if attempt < max_attempts - 1:
-                        print(f"  429限流，60s后重试 (第{attempt+1}/{max_attempts}次)")
-                        await asyncio.sleep(60)
-                        last_error = e
-                        continue
-
                 last_error = e
+                if attempt < max_attempts - 1:
+                    err_preview = str(e)[:60]
+                    print(f"  LLM调用失败，60s后重试 (第{attempt+1}/{max_attempts}次): {err_preview}")
+                    await asyncio.sleep(60)
+                    continue
                 break
 
         raise LLMError(f"LLM调用失败（耗时{elapsed_ms:.0f}ms）: {last_error}") from last_error
