@@ -50,7 +50,7 @@ class ToolAgent(BaseAgent):
         name: str,
         llm_client: LLMClient,
         tools: list[ToolDef],
-        max_steps: int = 15,
+        max_steps: int = 30,
     ) -> None:
         system_prompt = self._build_prompt(tools)
         super().__init__(name, system_prompt, llm_client)

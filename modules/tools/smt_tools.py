@@ -414,7 +414,7 @@ def _enrich_needed(statements: list[dict], needed: set[str]) -> None:
 
 def _gen_condition_compatibility(pfx: str, conditions: list[tuple[str, str, str]]) -> list[str]:
     """为每个 condition 生成操作符-键兼容性检查的 define-fun。"""
-    from modules.generators.builtin_valid_permission import (
+    from modules.tools.smt_helpers import (
         _classify_operator, _classify_key,
         STRING_KEYS, NUMERIC_KEYS, BOOL_KEYS, DATE_KEYS, IP_KEYS, STRING_KEY_PREFIXES,
     )
@@ -526,7 +526,7 @@ def tool_smt_contradiction_check(statements_json: str) -> str:
     检查条件间的逻辑矛盾（同值stringmatch+stringmatchnot等），
     对矛盾的条件生成 unsat 断言。
     """
-    from modules.generators.builtin_valid_permission import (
+    from modules.tools.smt_helpers import (
         _detect_contradictions, _extract_conditions as _extract_full,
     )
 
@@ -545,7 +545,7 @@ def tool_smt_contradiction_check(statements_json: str) -> str:
             continue
 
         contradictions = _detect_contradictions(conds_full, stmt.get("Effect", "Allow"))
-        from modules.generators.builtin_valid_permission import _has_date_past_only
+        from modules.tools.smt_helpers import _has_date_past_only
         date_past = _has_date_past_only(conds_full)
 
         if contradictions or date_past:

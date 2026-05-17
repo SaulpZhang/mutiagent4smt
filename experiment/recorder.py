@@ -178,9 +178,9 @@ class ExperimentRecorder:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO experiment_runs
-                    (run_id, prompt_type, model_used, parallel, attempts, gen_mode,
+                    (run_id, prompt_type, model_used, parallel, attempts,
                      max_iterations, max_syntax_retries, total_cases)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -188,7 +188,6 @@ class ExperimentRecorder:
                     config.get("model_used", ""),
                     config.get("parallel", 1),
                     config.get("attempts", 1),
-                    config.get("gen_mode", 1),
                     config.get("max_iterations", 10),
                     config.get("max_syntax_retries", 5),
                     config.get("total_cases", 0),

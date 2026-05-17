@@ -42,10 +42,6 @@ def main() -> None:
         help="提示词类型（默认default，对应 templates/ 目录）",
     )
     run_parser.add_argument(
-        "--gen-mode", type=int, default=1, choices=[0, 1, 2],
-        help="SMT代码生成模式: 0=纯LLM, 1=Generator+LLM回退, 2=LLM-Managed Generator（默认1）",
-    )
-    run_parser.add_argument(
         "--runid", type=str, default=None,
         help="自定义实验ID，不指定则自动生成",
     )
@@ -83,9 +79,6 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     attempts = args.attempts or 1
     prompt_type = args.prompt_type or "default"
-    gen_mode = args.gen_mode if args.gen_mode is not None else settings.gen_mode
-
-    gen_mode_labels = {0: "纯LLM", 1: "Generator + LLM回退", 2: "LLM-Managed Generator"}
 
     print("=" * 60)
     print("  CodeV 系统流水线")
@@ -93,7 +86,6 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     if attempts > 1:
         print(f"  尝试次数:   {attempts}（用于PASS@1/3/5统计）")
     print(f"  提示词:     {prompt_type}")
-    print(f"  生成模式:   {gen_mode} - {gen_mode_labels.get(gen_mode, '未知')}")
     print("=" * 60)
 
     input_module = InputModule(settings.data_dir)
@@ -127,7 +119,6 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         "prompt_type": prompt_type,
         "model_used": settings.model_name,
         "attempts": attempts,
-        "gen_mode": gen_mode,
         "max_iterations": settings.max_iterations,
         "max_syntax_retries": settings.max_syntax_retries,
         "total_cases": total,
@@ -149,7 +140,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         for attempt_num in range(1, attempts + 1):
             # 每次尝试创建全新的3个Agent
-            case_pipeline = compile_pipeline(prompt_type=prompt_type, run_id=run_id, gen_mode=gen_mode)
+            case_pipeline = compile_pipeline(prompt_type=prompt_type, run_id=run_id)
 
             record = ExperimentRecord(
                 instruct_id=case.instruct_id,

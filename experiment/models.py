@@ -54,17 +54,11 @@ CREATE TABLE IF NOT EXISTS experiment_runs (
     model_used TEXT,
     parallel INTEGER DEFAULT 1,
     attempts INTEGER DEFAULT 1,
-    gen_mode INTEGER DEFAULT 1,
     max_iterations INTEGER DEFAULT 10,
     max_syntax_retries INTEGER DEFAULT 5,
     total_cases INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 )
-"""
-
-# 迁移SQL：为已有 experiment_runs 表添加 gen_mode 列（幂等）
-ALTER_TABLE_ADD_GEN_MODE = """
-ALTER TABLE experiment_runs ADD COLUMN gen_mode INTEGER DEFAULT 1
 """
 
 ALL_TABLES = [
@@ -73,7 +67,4 @@ ALL_TABLES = [
     CREATE_TABLE_EXPERIMENT_RUNS,
 ]
 
-# 数据库迁移脚本（幂等，已存在的列会静默跳过）
-MIGRATIONS = [
-    ALTER_TABLE_ADD_GEN_MODE,
-]
+MIGRATIONS: list[str] = []

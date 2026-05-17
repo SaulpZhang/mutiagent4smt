@@ -46,12 +46,6 @@ class Settings(BaseSettings):
     # Prompt
     prompt_type: str = "default"
 
-    # SMT代码生成模式
-    # 0 = 纯LLM路径（不使用程序化生成器）
-    # 1 = Generator + LLM回退（当前行为）
-    # 2 = LLM-Managed Generator（LLM分发到用户自定义生成器）
-    gen_mode: int = 1
-
     # Experiment
     experiment_name: str = "default"
 

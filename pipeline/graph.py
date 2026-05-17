@@ -2,21 +2,22 @@ from __future__ import annotations
 
 """LangGraph StateGraph 流水线（单用例处理）
 
+Agent 2 使用 ToolAgent（ReAct 模式），通过 smt_verify 自检语法，
+无需外部语法修正节点。
+
 流程:
-   intent_agent → code_gen → syntax_check
-                                │
-                       ┌────────┴────────┐
-                       │ 语法通过          │ 语法不通过(未达上限)
-                       ▼                  ▼
-                   evaluate          syntax_fix(修正语法)
-                       │
-               ┌───────┴───────┐
-               │ 全部满足         │ 存在不满足(未达上限)
-               ▼                 ▼
-            output          semantic_fix(语义修正)
-               │
-               ▼
-            verify
+   intent_agent → code_gen (ToolAgent ReAct)
+                        │
+                        ▼
+                    evaluate
+                        │
+                ┌───────┴───────┐
+                │ 全部满足         │ 存在不满足(未达上限)
+                ▼                 ▼
+             output          semantic_fix (ToolAgent 再次生成)
+                │                 │
+                ▼                 ▼
+             verify          evaluate (loop)
 
 说明：
 - 本图处理单个用例，所有用例的遍历在 main.py 中完成
@@ -29,34 +30,6 @@ from langgraph.graph import END, StateGraph
 
 from pipeline.nodes import PipelineNodes
 from pipeline.state import PipelineState
-
-
-def decide_syntax_route(state: PipelineState) -> Literal["syntax_fix", "evaluate", "regenerate", "output"]:
-    """语法检查后的路由
-
-    - 语法通过 → evaluate
-    - 语法不通过且未达上限 → syntax_fix
-    - 语法不通过且达上限，但重生成次数未达上限 → regenerate（重新生成）
-    - 语法不通过且达上限，且重生成也达上限 → output
-    """
-    syntax = state.get("syntax_result")
-    if syntax is None:
-        return "output"
-
-    if syntax.is_valid:
-        return "evaluate"
-
-    retry_count = state.get("syntax_retry_count", 0)
-    max_retries = state.get("max_syntax_retries", 5)
-    regeneration_count = state.get("regeneration_count", 0)
-    max_regenerations = 2
-
-    if retry_count >= max_retries:
-        if regeneration_count < max_regenerations:
-            return "regenerate"
-        return "output"
-
-    return "syntax_fix"
 
 
 def decide_evaluation_route(state: PipelineState) -> Literal["semantic_fix", "output"]:
@@ -82,45 +55,28 @@ def decide_evaluation_route(state: PipelineState) -> Literal["semantic_fix", "ou
     return "semantic_fix"
 
 
-def build_case_pipeline(prompt_type: str = "default", run_id: str = "", gen_mode: int = 1) -> StateGraph:
+def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
     """构建单用例处理的流水线"""
-    nodes = PipelineNodes(prompt_type=prompt_type, run_id=run_id, gen_mode=gen_mode)
+    nodes = PipelineNodes(prompt_type=prompt_type, run_id=run_id)
 
     workflow = StateGraph(PipelineState)
 
     # 注册所有节点
     workflow.add_node("intent_agent", nodes.intent_agent_node)
     workflow.add_node("code_gen", nodes.code_gen_node)
-    workflow.add_node("syntax_fix", nodes.code_gen_node)
     workflow.add_node("semantic_fix", nodes.code_gen_node)
-    workflow.add_node("syntax_check", nodes.syntax_check_node)
     workflow.add_node("evaluate", nodes.evaluate_node)
     workflow.add_node("output", nodes.output_node)
     workflow.add_node("verify", nodes.verify_node)
 
-    # 设置入口和流程
+    # 设置入口
     workflow.set_entry_point("intent_agent")
 
-    # intent_agent → code_gen (首次生成)
+    # intent_agent → code_gen (ToolAgent ReAct 生成)
     workflow.add_edge("intent_agent", "code_gen")
 
-    # code_gen → syntax_check
-    workflow.add_edge("code_gen", "syntax_check")
-
-    # syntax_check → 条件路由
-    workflow.add_conditional_edges(
-        "syntax_check",
-        decide_syntax_route,
-        {
-            "syntax_fix": "syntax_fix",
-            "evaluate": "evaluate",
-            "regenerate": "code_gen",
-            "output": "output",
-        },
-    )
-
-    # syntax_fix → syntax_check (语法修正循环)
-    workflow.add_edge("syntax_fix", "syntax_check")
+    # code_gen → evaluate（跳过语法检查，ToolAgent 已用 smt_verify 自检）
+    workflow.add_edge("code_gen", "evaluate")
 
     # evaluate → 条件路由
     workflow.add_conditional_edges(
@@ -132,8 +88,8 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "", gen_mode
         },
     )
 
-    # semantic_fix → syntax_check (语义修正后重新检查语法)
-    workflow.add_edge("semantic_fix", "syntax_check")
+    # semantic_fix → evaluate（ToolAgent 再次生成后直接评估）
+    workflow.add_edge("semantic_fix", "evaluate")
 
     # output → verify
     workflow.add_edge("output", "verify")
@@ -144,7 +100,7 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "", gen_mode
     return workflow
 
 
-def compile_pipeline(prompt_type: str = "default", run_id: str = "", gen_mode: int = 1) -> StateGraph:
+def compile_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
     """编译并返回可执行的流水线"""
-    workflow = build_case_pipeline(prompt_type=prompt_type, run_id=run_id, gen_mode=gen_mode)
+    workflow = build_case_pipeline(prompt_type=prompt_type, run_id=run_id)
     return workflow.compile()

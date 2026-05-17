@@ -46,13 +46,4 @@ class EvaluationModule:
         )
         result = await self.evaluation_agent.run(prompt=prompt)
 
-        if trace_logger:
-            trace_logger.log(
-                "eval_agent",
-                self.evaluation_agent.system_prompt,
-                prompt,
-                result.model_dump_json() if hasattr(result, "model_dump_json") else str(result),
-                iteration=iteration,
-            )
-
         return result  # type: ignore[return-value]
