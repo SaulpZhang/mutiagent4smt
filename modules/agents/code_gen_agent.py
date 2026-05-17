@@ -18,10 +18,7 @@ class CodeGenerationAgent(BaseAgent):
         if not prompt:
             raise ValueError("缺少prompt参数")
 
-        response = await self.llm_client.chat(
-            system_prompt=self.system_prompt,
-            user_message=prompt,
-        )
+        response = await self._chat(user_message=prompt)
 
         return self._parse_response(response)
 

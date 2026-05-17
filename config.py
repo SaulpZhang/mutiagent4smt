@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     model_name: str = "deepseek-chat"
     llm_temperature: float = 0.1
     llm_max_tokens: int = 4096
-    llm_request_timeout: int = 120
+    llm_request_timeout: int = 300
     llm_max_retries: int = 3
 
     # 各Agent独立模型配置（如不设置则使用 common_model）
@@ -45,6 +45,12 @@ class Settings(BaseSettings):
 
     # Prompt
     prompt_type: str = "default"
+
+    # SMT代码生成模式
+    # 0 = 纯LLM路径（不使用程序化生成器）
+    # 1 = Generator + LLM回退（当前行为）
+    # 2 = LLM-Managed Generator（LLM分发到用户自定义生成器）
+    gen_mode: int = 1
 
     # Experiment
     experiment_name: str = "default"

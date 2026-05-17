@@ -6,7 +6,7 @@ from pathlib import Path
 
 from core.exceptions import ExperimentError
 from core.schemas import ExperimentRecord
-from experiment.models import ALL_TABLES
+from experiment.models import ALL_TABLES, MIGRATIONS
 
 
 class ExperimentRecorder:
@@ -23,12 +23,18 @@ class ExperimentRecorder:
         return conn
 
     def _init_db(self) -> None:
-        """初始化数据库表"""
+        """初始化数据库表和迁移"""
         conn = self._get_conn()
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             for table_sql in ALL_TABLES:
                 conn.execute(table_sql)
+            # 运行迁移脚本（幂等，已存在的列静默跳过）
+            for migration_sql in MIGRATIONS:
+                try:
+                    conn.execute(migration_sql)
+                except Exception:
+                    pass  # 迁移失败说明列已存在，忽略
             conn.commit()
         finally:
             conn.close()
@@ -172,9 +178,9 @@ class ExperimentRecorder:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO experiment_runs
-                    (run_id, prompt_type, model_used, parallel, attempts,
+                    (run_id, prompt_type, model_used, parallel, attempts, gen_mode,
                      max_iterations, max_syntax_retries, total_cases)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -182,6 +188,7 @@ class ExperimentRecorder:
                     config.get("model_used", ""),
                     config.get("parallel", 1),
                     config.get("attempts", 1),
+                    config.get("gen_mode", 1),
                     config.get("max_iterations", 10),
                     config.get("max_syntax_retries", 5),
                     config.get("total_cases", 0),

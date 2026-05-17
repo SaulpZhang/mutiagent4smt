@@ -42,6 +42,10 @@ def main() -> None:
         help="提示词类型（默认default，对应 templates/ 目录）",
     )
     run_parser.add_argument(
+        "--gen-mode", type=int, default=1, choices=[0, 1, 2],
+        help="SMT代码生成模式: 0=纯LLM, 1=Generator+LLM回退, 2=LLM-Managed Generator（默认1）",
+    )
+    run_parser.add_argument(
         "--runid", type=str, default=None,
         help="自定义实验ID，不指定则自动生成",
     )
@@ -79,13 +83,17 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     attempts = args.attempts or 1
     prompt_type = args.prompt_type or "default"
+    gen_mode = args.gen_mode if args.gen_mode is not None else settings.gen_mode
+
+    gen_mode_labels = {0: "纯LLM", 1: "Generator + LLM回退", 2: "LLM-Managed Generator"}
 
     print("=" * 60)
     print("  CodeV 系统流水线")
     print("  多LLM智能体集成的IAM策略形式化验证")
     if attempts > 1:
-        print(f"  尝试次数: {attempts}（用于PASS@1/3/5统计）")
-    print(f"  提示词:    {prompt_type}")
+        print(f"  尝试次数:   {attempts}（用于PASS@1/3/5统计）")
+    print(f"  提示词:     {prompt_type}")
+    print(f"  生成模式:   {gen_mode} - {gen_mode_labels.get(gen_mode, '未知')}")
     print("=" * 60)
 
     input_module = InputModule(settings.data_dir)
@@ -119,6 +127,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         "prompt_type": prompt_type,
         "model_used": settings.model_name,
         "attempts": attempts,
+        "gen_mode": gen_mode,
         "max_iterations": settings.max_iterations,
         "max_syntax_retries": settings.max_syntax_retries,
         "total_cases": total,
@@ -140,7 +149,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         for attempt_num in range(1, attempts + 1):
             # 每次尝试创建全新的3个Agent
-            case_pipeline = compile_pipeline(prompt_type=prompt_type, run_id=run_id)
+            case_pipeline = compile_pipeline(prompt_type=prompt_type, run_id=run_id, gen_mode=gen_mode)
 
             record = ExperimentRecord(
                 instruct_id=case.instruct_id,
@@ -290,15 +299,16 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         print(f"  每用例循环 {attempts} 次, 共 {total * attempts} 次 Agent 调用\n")
     from tqdm import tqdm
     all_results = []
-    for idx in tqdm(indices, desc="处理用例", unit="用例"):
-        all_results.append(await process_one(idx))
+    try:
+        for idx in tqdm(indices, desc="处理用例", unit="用例"):
+            all_results.append(await process_one(idx))
+    finally:
+        # 确保释放httpx共享连接池（防止信号量泄漏）
+        from agent.llm_client import LLMClient
+        await LLMClient.close_all()
 
     # PASS@K 统计
     pass_stats = recorder.get_pass_at_k_stats(run_id=run_id)
-
-    # 释放所有LLM客户端连接资源（httpx共享连接池）
-    from agent.llm_client import LLMClient
-    await LLMClient.close_all()
 
     print(f"\n{'=' * 60}")
     print(f"  运行完成  实验编号: {run_id}")

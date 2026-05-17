@@ -1,9 +1,40 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import IntEnum
 from typing import Any
 
 from core.schemas import ConstraintsList, SMTLibCode
+
+
+class GenMode(IntEnum):
+    """SMT代码生成模式
+
+    模式说明:
+        PURE_LLM = 0
+            纯LLM路径：完全由LLM生成SMT代码，不使用任何程序化生成器。
+            适用于测试LLM自身的代码生成能力，或作为baseline对比。
+
+        GENERATOR_LLM = 1
+            Generator + LLM回退：优先匹配程序化生成器（GeneratorRegistry），
+            匹配成功则直接生成（无LLM调用），匹配失败或fallback条件触发时走LLM。
+            当前默认行为，覆盖125/126用例。
+
+        LLM_MANAGED = 2
+            LLM-Managed Generator：通过LLM分发将指令与用户定义的生成器匹配。
+            生成器以 spec.json + generator.py 形式存储在 user_defined/ 目录，
+            由LLM根据验证指令判断是否使用生成器（无需关键词匹配）。
+            无匹配时回退到纯LLM生成。
+
+    扩展方式（后续新增）:
+        3 = RAG增强生成: 从用例库检索相似case的SMT代码作为few-shot示例
+        4 = Grammar-guided: 基于SMT语法模板的约束引导生成
+        ...
+    """
+
+    PURE_LLM = 0
+    GENERATOR_LLM = 1
+    LLM_MANAGED = 2
 
 
 class SMTGenerator(ABC):

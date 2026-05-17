@@ -18,9 +18,10 @@ from prompt.manager import PromptManager
 class PipelineNodes:
     """流水线节点适配器：注册所有模块并实现节点函数"""
 
-    def __init__(self, prompt_type: str = "default", run_id: str = "") -> None:
+    def __init__(self, prompt_type: str = "default", run_id: str = "", gen_mode: int = 1) -> None:
         self._modules: dict[str, Any] = {}
         self.run_id = run_id
+        self.gen_mode = gen_mode
 
         # 初始化所有依赖
         prompt_manager = PromptManager(prompt_type=prompt_type)
@@ -31,12 +32,38 @@ class PipelineNodes:
         registry = GeneratorRegistry()
         registry.register(ValidPermissionGenerator())
 
+        # gen_mode=2: 创建 LLM-Managed Generator 管理器
+        user_defined_manager = None
+        if gen_mode == 2:
+            from pathlib import Path as _Path
+            from agent.llm_client import LLMClient as _LLMClient
+            from modules.generators.user_defined_manager import (
+                UserDefinedGeneratorManager as _UDGM,
+            )
+
+            dispatch_llm = _LLMClient(
+                model_name=(
+                    settings.agent_2_model or settings.common_model or settings.model_name
+                ),
+                temperature=0.0,
+            )
+            base_path = str(
+                _Path(__file__).resolve().parent.parent
+                / "modules" / "generators" / "user_defined"
+            )
+            user_defined_manager = _UDGM(
+                base_dir=base_path,
+                llm_client=dispatch_llm,
+            )
+
         self._modules["generation"] = GenerationModule(
             intent_agent=agent_builder.build_intent_agent(),
             code_gen_agent=agent_builder.build_code_gen_agent(),
             prompt_manager=prompt_manager,
             verification_module=verification_module,
             generator_registry=registry,
+            gen_mode=self.gen_mode,
+            user_defined_manager=user_defined_manager,
         )
         self._modules["evaluation"] = EvaluationModule(
             evaluation_agent=agent_builder.build_eval_agent(),

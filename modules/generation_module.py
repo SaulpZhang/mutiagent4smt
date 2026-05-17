@@ -30,12 +30,16 @@ class GenerationModule:
         prompt_manager: PromptManager,
         verification_module: VerificationModule,
         generator_registry: GeneratorRegistry | None = None,
+        gen_mode: int = 1,
+        user_defined_manager: Any = None,
     ) -> None:
         self.intent_agent = intent_agent
         self.code_gen_agent = code_gen_agent
         self.prompt_manager = prompt_manager
         self.verification_module = verification_module
         self.generator_registry = generator_registry or GeneratorRegistry()
+        self.gen_mode = gen_mode
+        self.user_defined_manager = user_defined_manager
 
     async def run_intent_analysis(
         self,
@@ -80,8 +84,15 @@ class GenerationModule:
         2. 语义修正（evaluation_feedback不为空）：
            使用LLM对代码进行语义修正
         """
-        # ── 首次生成：尝试使用程序化生成器（仅第一次尝试） ──
-        if not evaluation_feedback and not extra_hint and iteration <= 1 and not force_llm:
+        # ── 首次生成：尝试使用程序化生成器（仅gen_mode=1且第一次尝试） ──
+        should_try_generator = (
+            self.gen_mode == 1
+            and not evaluation_feedback
+            and not extra_hint
+            and iteration <= 1
+            and not force_llm
+        )
+        if should_try_generator:
             generator = self.generator_registry.find(input_data.instruction)
             if generator is not None:
                 try:
@@ -106,6 +117,46 @@ class GenerationModule:
                             "回退到LLM生成",
                             iteration=1,
                         )
+
+        # ── 首次生成：尝试使用 LLM管理的生成器（仅gen_mode=2且第一次尝试） ──
+        should_try_user_defined = (
+            self.gen_mode == 2
+            and self.user_defined_manager is not None
+            and not evaluation_feedback
+            and not extra_hint
+            and iteration <= 1
+            and not force_llm
+        )
+        if should_try_user_defined:
+            generator_name, reason = await self.user_defined_manager.dispatch(
+                input_data.instruction
+            )
+            if generator_name is not None:
+                try:
+                    generate_fn = self.user_defined_manager.load_generator_function(
+                        generator_name
+                    )
+                    result = generate_fn(input_data.account_data, constraints)
+                    if trace_logger:
+                        trace_logger.log(
+                            f"user_defined_generator:{generator_name}",
+                            "",
+                            f"Instruction: {input_data.instruction}\nDispatch: {reason}",
+                            result.code,
+                            iteration=1,
+                            extra="LLM管理的生成器（无LLM代码生成调用）",
+                        )
+                    return result
+                except Exception as e:
+                    if trace_logger:
+                        trace_logger.log(
+                            f"user_defined_generator:{generator_name}",
+                            "",
+                            f"生成器执行失败: {e}",
+                            "回退到LLM生成",
+                            iteration=1,
+                        )
+                    # 回退到 LLM
 
         # ── LLM生成（回退或语义修正模式） ──
         if evaluation_feedback:

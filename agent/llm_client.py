@@ -118,16 +118,32 @@ class LLMClient:
 
     async def chat(
         self,
-        system_prompt: str,
-        user_message: str,
+        system_prompt: str | None = None,
+        user_message: str | None = None,
+        messages: list | None = None,
         temperature: float | None = None,
         json_output: bool = False,
     ) -> str:
-        """发送对话请求并返回响应文本（含限流自动重试）"""
-        messages = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=user_message),
-        ]
+        """发送对话请求并返回响应文本（含限流自动重试）
+
+        Args:
+            system_prompt: 系统提示词（与 user_message 配对使用）
+            user_message: 用户消息（与 system_prompt 配对使用）
+            messages: 完整消息列表（替代 system_prompt+user_message）
+            temperature: 温度参数
+            json_output: 是否要求 JSON 输出
+
+        必须提供 system_prompt+user_message 或 messages 之一。
+        """
+        if messages is not None:
+            final_messages = messages
+        else:
+            if system_prompt is None or user_message is None:
+                raise ValueError("必须提供 system_prompt+user_message 或 messages")
+            final_messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_message),
+            ]
 
         model = self._get_model(json_output=json_output)
 
@@ -140,7 +156,7 @@ class LLMClient:
             try:
                 response = await asyncio.wait_for(
                     model.ainvoke(
-                        messages,
+                        final_messages,
                         temperature=temperature if temperature is not None else self.temperature,
                     ),
                     timeout=self.request_timeout,
@@ -159,6 +175,10 @@ class LLMClient:
             except asyncio.TimeoutError:
                 elapsed_ms = (time.perf_counter() - request_start) * 1000
                 last_error = TimeoutError(f"LLM请求超时（{self.request_timeout}s）")
+                if attempt < max_attempts - 1:
+                    print(f"  请求超时，5s后重试 (第{attempt+1}/{max_attempts}次)")
+                    await asyncio.sleep(5)
+                    continue
                 break
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - request_start) * 1000

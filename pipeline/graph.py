@@ -82,9 +82,9 @@ def decide_evaluation_route(state: PipelineState) -> Literal["semantic_fix", "ou
     return "semantic_fix"
 
 
-def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
+def build_case_pipeline(prompt_type: str = "default", run_id: str = "", gen_mode: int = 1) -> StateGraph:
     """构建单用例处理的流水线"""
-    nodes = PipelineNodes(prompt_type=prompt_type, run_id=run_id)
+    nodes = PipelineNodes(prompt_type=prompt_type, run_id=run_id, gen_mode=gen_mode)
 
     workflow = StateGraph(PipelineState)
 
@@ -144,7 +144,7 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> State
     return workflow
 
 
-def compile_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
+def compile_pipeline(prompt_type: str = "default", run_id: str = "", gen_mode: int = 1) -> StateGraph:
     """编译并返回可执行的流水线"""
-    workflow = build_case_pipeline(prompt_type=prompt_type, run_id=run_id)
+    workflow = build_case_pipeline(prompt_type=prompt_type, run_id=run_id, gen_mode=gen_mode)
     return workflow.compile()
