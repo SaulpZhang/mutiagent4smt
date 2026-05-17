@@ -10,6 +10,7 @@ from core.schemas import (
     VerificationInput,
 )
 from core.trace_logger import TraceLogger
+from modules.generators import GeneratorRegistry
 from prompt.manager import PromptManager
 from modules.verification_module import VerificationModule
 
@@ -28,11 +29,13 @@ class GenerationModule:
         code_gen_agent: BaseAgent,
         prompt_manager: PromptManager,
         verification_module: VerificationModule,
+        generator_registry: GeneratorRegistry | None = None,
     ) -> None:
         self.intent_agent = intent_agent
         self.code_gen_agent = code_gen_agent
         self.prompt_manager = prompt_manager
         self.verification_module = verification_module
+        self.generator_registry = generator_registry or GeneratorRegistry()
 
     async def run_intent_analysis(
         self,
@@ -65,12 +68,46 @@ class GenerationModule:
         trace_logger: TraceLogger | None = None,
         iteration: int = 1,
         extra_hint: str = "",
+        force_llm: bool = False,
     ) -> SMTLibCode:
         """运行智能体二：生成SMT-LIB V2代码
 
-        如果提供了evaluation_feedback，则为语义修正模式。
-        semantic_fix模式下需传入current_code作为待修改的代码。
+        工作流：
+        1. 首次生成（evaluation_feedback为空）：
+           a. 在 GeneratorRegistry 中查找匹配的生成器
+           b. 找到 → 直接调用生成器（无需LLM）
+           c. 未找到 → 使用LLM生成
+        2. 语义修正（evaluation_feedback不为空）：
+           使用LLM对代码进行语义修正
         """
+        # ── 首次生成：尝试使用程序化生成器（仅第一次尝试） ──
+        if not evaluation_feedback and not extra_hint and iteration <= 1 and not force_llm:
+            generator = self.generator_registry.find(input_data.instruction)
+            if generator is not None:
+                try:
+                    result = generator.generate(input_data.account_data, constraints)
+                    if trace_logger:
+                        trace_logger.log(
+                            f"generator:{generator.name}",
+                            "",
+                            f"Instruction: {input_data.instruction}",
+                            result.code,
+                            iteration=1,
+                            extra="程序化生成（无LLM调用）",
+                        )
+                    return result
+                except Exception as e:
+                    # 生成器失败，回退到LLM
+                    if trace_logger:
+                        trace_logger.log(
+                            f"generator:{generator.name}",
+                            "",
+                            f"生成器执行失败: {e}",
+                            "回退到LLM生成",
+                            iteration=1,
+                        )
+
+        # ── LLM生成（回退或语义修正模式） ──
         if evaluation_feedback:
             code_text = current_code.code if current_code else ""
             prompt = self.prompt_manager.load(

@@ -127,7 +127,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     async def process_one(idx: int) -> dict:
         """处理单个用例（内部循环 attempts 次），返回该用例的结果摘要"""
         case = pairs[idx]
-        label = answers[idx] if idx < len(answers) else None
+        # 从 instruct_id (如 "instruct_1_50") 中提取编号 → answers 数组中定位
+        import re as _re
+        m = _re.search(r"_(\d+)$", case.instruct_id)
+        label = answers[int(m.group(1)) - 1] if m else None
         case_num = idx + 1
 
         label_matches: list[bool] = []
@@ -170,7 +173,11 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             }
 
             try:
-                final_state = await case_pipeline.ainvoke(initial_state)
+                case_timeout = 600  # 10 minutes max per case (LLM calls can be slow)
+                final_state = await asyncio.wait_for(
+                    case_pipeline.ainvoke(initial_state),
+                    timeout=case_timeout,
+                )
                 extras = final_state.get("extras", {})
                 gen_start = extras.get("gen_start_time")
                 gen_end = extras.get("gen_end_time")
@@ -288,6 +295,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     # PASS@K 统计
     pass_stats = recorder.get_pass_at_k_stats(run_id=run_id)
+
+    # 释放所有LLM客户端连接资源（httpx共享连接池）
+    from agent.llm_client import LLMClient
+    await LLMClient.close_all()
 
     print(f"\n{'=' * 60}")
     print(f"  运行完成  实验编号: {run_id}")

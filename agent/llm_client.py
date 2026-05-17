@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
 
+import httpx
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
@@ -12,7 +14,11 @@ from core.exceptions import LLMError
 
 
 class LLMClient:
-    """LLM API客户端，封装LangChain的ChatOpenAI（兼容DeepSeek API）"""
+    """LLM API客户端，封装LangChain的ChatOpenAI（兼容DeepSeek API）
+
+    每个LLM调用受总超时保护（asyncio.wait_for + httpx严格超时双层保护）。
+    复用ChatOpenAI实例以避免连接泄漏。
+    """
 
     def __init__(
         self,
@@ -41,7 +47,45 @@ class LLMClient:
         if not self.api_url:
             raise LLMError("API_URL未设置，请检查.env文件")
 
-    def _build_model(self, json_output: bool = False) -> ChatOpenAI:
+        # 缓存ChatOpenAI实例，按json_output分别缓存
+        self._model_normal: ChatOpenAI | None = None
+        self._model_json: ChatOpenAI | None = None
+
+    # 类级共享httpx客户端，避免每个LLMClient实例独立创建连接池泄漏信号量
+    _shared_async_client: httpx.AsyncClient | None = None
+
+    @classmethod
+    def _get_shared_async_client(cls) -> httpx.AsyncClient:
+        """获取类级共享的httpx客户端（所有实例共用一个连接池）"""
+        if cls._shared_async_client is None:
+            cls._shared_async_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=15.0,
+                    read=45.0,
+                    write=30.0,
+                    pool=10.0,
+                ),
+                limits=httpx.Limits(
+                    max_keepalive_connections=2,
+                    max_connections=4,
+                ),
+            )
+        return cls._shared_async_client
+
+    @classmethod
+    async def close_all(cls) -> None:
+        """释放共享httpx客户端连接（实验结束时调用）"""
+        if cls._shared_async_client is not None:
+            await cls._shared_async_client.aclose()
+            cls._shared_async_client = None
+
+    def _get_model(self, json_output: bool = False) -> ChatOpenAI:
+        """获取或创建缓存的ChatOpenAI实例"""
+        cache_attr = "_model_json" if json_output else "_model_normal"
+        cached = getattr(self, cache_attr)
+        if cached is not None:
+            return cached
+
         kwargs: dict[str, Any] = dict(
             model=self.model_name,
             api_key=self.api_key,
@@ -59,13 +103,18 @@ class LLMClient:
         if model_kwargs:
             kwargs["model_kwargs"] = model_kwargs
 
-        # DeepSeek 推理参数（顶层参数，避免 LangChain 警告）
+        # DeepSeek 推理参数
         if self.reasoning_effort:
             kwargs["reasoning_effort"] = self.reasoning_effort
         if self.thinking:
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
-        return ChatOpenAI(**kwargs)
+        # 传递共享httpx异步客户端（类级复用，避免连接泄漏）
+        kwargs["http_async_client"] = self._get_shared_async_client()
+
+        model = ChatOpenAI(**kwargs)
+        setattr(self, cache_attr, model)
+        return model
 
     async def chat(
         self,
@@ -74,22 +123,27 @@ class LLMClient:
         temperature: float | None = None,
         json_output: bool = False,
     ) -> str:
-        """发送对话请求并返回响应文本（含429限流自动重试）"""
+        """发送对话请求并返回响应文本（含限流自动重试）"""
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message),
         ]
 
-        model = self._build_model(json_output=json_output)
+        model = self._get_model(json_output=json_output)
+
         max_attempts = self.max_retries + 1
 
         last_error: Exception | None = None
+        elapsed_ms: float = 0.0
         for attempt in range(max_attempts):
             request_start = time.perf_counter()
             try:
-                response = await model.ainvoke(
-                    messages,
-                    temperature=temperature if temperature is not None else self.temperature,
+                response = await asyncio.wait_for(
+                    model.ainvoke(
+                        messages,
+                        temperature=temperature if temperature is not None else self.temperature,
+                    ),
+                    timeout=self.request_timeout,
                 )
                 elapsed_ms = (time.perf_counter() - request_start) * 1000
                 content = response.content if hasattr(response, "content") else str(response)
@@ -102,16 +156,19 @@ class LLMClient:
                         raise LLMError(f"LLM未返回合法JSON: {e}\n原始响应: {result[:200]}") from e
 
                 return result
+            except asyncio.TimeoutError:
+                elapsed_ms = (time.perf_counter() - request_start) * 1000
+                last_error = TimeoutError(f"LLM请求超时（{self.request_timeout}s）")
+                break
             except Exception as e:
                 elapsed_ms = (time.perf_counter() - request_start) * 1000
                 error_str = str(e)
 
-                # 429限流：退避重试
+                # 429限流：固定60s退避后重试
                 if "429" in error_str or "rate limit" in error_str.lower() or "tpm limit" in error_str.lower():
                     if attempt < max_attempts - 1:
-                        backoff = 2 ** attempt  # 指数退避: 1s, 2s, 4s
-                        print(f"  429限流，{backoff}s后重试 (第{attempt+1}/{max_attempts}次)")
-                        time.sleep(backoff)
+                        print(f"  429限流，60s后重试 (第{attempt+1}/{max_attempts}次)")
+                        await asyncio.sleep(60)
                         last_error = e
                         continue
 

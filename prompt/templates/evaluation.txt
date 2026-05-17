@@ -8,7 +8,7 @@
 背景说明：
 - IAM配置采用**华为云IAM格式**（Version 5.0），涉及OBS存储桶策略和委托信任策略
 - Action使用华为云命名（如 `sts:agencies:assume`、`obs:object:listBucket`）
-- Condition操作符包括 `stringequals`、`stringmatch`、`forallvalues:stringequalsnot` 等
+- Condition操作符包括 `stringequals`、`stringmatch`、`forallvalues:stringequalsnot` 等，各操作符要求匹配特定类型的键
 - Principal类型为 `"IAM"`
 
 ## 评估标准（重要—请仔细阅读）
@@ -20,25 +20,52 @@
 - 代码中存在验证函数（如 `field_X_valid`），且验证逻辑正确检查了字段值
 - **即使验证函数的结果导致 `policy_has_valid_permission = false`（最终Z3返回 unsat），只要验证逻辑本身正确，仍判定为满足**
 - 例如：约束要求"验证操作符与键类型兼容"，代码中有 `condition_operator_key_compatible` 函数，且正确分类了操作符和键类型 → **满足**
+- **如果代码中包含了超出约束列表要求的额外验证函数，这不算违规**——只需检查约束列表中的每一项是否被满足
 
 ### ❌ 判定为"不满足"（not_satisfied）的情况：
 - 代码中缺少约束对应的声明或定义
 - 验证逻辑不完整（如只检查了部分要求）
 - 验证逻辑错误（如使用了错误的值集或错误的判断条件）
-- **注意：如果代码中的验证函数写成了与自身比较（tautology），而不是检查有效值集合 → 不满足**
 
 ### 关键区分
-- ⚠️ IAM配置本身可能无效（如条件操作符类型不匹配），此时SMT代码应返回 unsat
+- ⚠️ IAM配置本身可能无效（如条件操作符类型不匹配、Principal为空），此时SMT代码应返回 unsat
 - 如果代码正确地验证并发现了配置的无效性，这**仍然满足"验证逻辑存在且正确"的约束**
 - 不要因为验证函数导致 `policy_has_valid_permission = false` 就判定约束不满足
 
-### ⚠️ 关于Action与Condition关系的特别说明
+### ⚠️ 关于约束含义的准确理解
 
-**Action和Condition是IAM策略中独立的字段，它们之间没有相互约束关系。** 如果约束列表中包含要求验证"Action与Condition兼容性"的约束（如C5要求验证"Action字段是否包含与冲突operator和condition key相关的操作"），请注意：
-- 这类约束描述的是**Condition块内部操作符与键的类型兼容性**，而非Action与Condition之间的交叉验证
-- 只要代码中已有Condition操作符与键类型兼容性检查（如 `condition_operator_key_compatible`），**即视为满足**此类约束
-- **不要**因为缺少`action_condition_compatible`等函数就判定约束不满足
-- Action字段仅需验证其值是否在华为云有效Action值集合中即可
+评估的核心原则是：**以约束列表中的描述为准，而不是依赖预设的硬编码规则**。约束列表中的每个约束描述了特定的验证要求，你应检查SMT代码是否实现了这些要求。
+
+1. **Effect值规范**：根据约束描述进行判断。如果约束要求"值为Allow或Deny"，则检查代码是否验证了这两个值；如果约束只要求"值为Allow"，则只检查Allow即可。
+
+2. **Action值规范**：**以约束列表中的具体描述为准**。例如：
+   - 如果约束描述为"Action值规范——非空"，则只需检查是否验证了非空
+   - 如果约束描述为"Action值需符合OBS动作命名格式（含obs:前缀）"，则应检查代码是否验证了`obs:`前缀或类似格式要求
+   - 如果约束描述为"Action值需符合STS动作命名格式（含sts:前缀）"，则应检查代码是否验证了`sts:`前缀
+
+3. **Principal值规范**：以约束描述为准，通常是验证存在性和非空。
+
+4. **Condition操作符与键类型兼容性**：
+   - 这是一个**关于Condition块内部**的验证——操作符的类型必须与条件键的类型匹配
+   - 例如：`numericequals` 要求键是数值型（如 `g:MFAAge`），`ipaddress` 要求键是IP型（如 `g:SourceIp`）
+   - **不需要**验证Action与Condition之间的关系（它们是独立字段）
+   - 如果代码中有 `condition_operator_key_compatible` 或类似的函数，检查它是否将操作符分类并与键类型进行比较
+   - **当策略中没有Condition块时**，此项约束应自动视为满足
+
+### ⚠️ 关于代码中存在额外验证函数的处理
+
+SMT代码可能包含比约束列表要求更多的验证函数（例如代码生成了 `condition_operator_key_compatible` 但约束列表没有显式要求）。**这些额外的验证函数不影响评估**——你只需要评估约束列表中的每一项是否被满足即可。
+
+## 逐项评估注意事项
+
+在逐项评估时，请仔细检查以下几点：
+
+1. **条件兼容性检查的准确性**：不要只看函数是否存在，还要检查**函数内部逻辑是否正确**。特别关注：
+   - 键类型分类是否基于键名称，而不是基于配对的操作符（例如 `g:MfaAge` 是数值型键，即使与 `bool` 操作符配对也不应被分类为布尔型）
+   - 操作符类型分类是否正确（如 `stringequals` → 字符串型，`numericequals` → 数值型，`bool` → 布尔型）
+   - 操作符和键的类型是否进行了交叉匹配检查（如 `operator_is_bool AND key_is_bool`）
+
+2. **Action格式验证**：检查是否与约束描述匹配。如果约束描述要求OBS命名格式，代码应验证 `obs:` 前缀。如果约束只要求非空，简单的非空检查即可。
 
 ## 逐项评估
 

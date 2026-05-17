@@ -44,5 +44,8 @@ first_interim_report_v1.pdf
 data
 data/*
 
+# Experiment record backup
+record/
+
 .DS_Store
 */.DS_Store

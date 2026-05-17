@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
 from core.exceptions import ModuleError
 from core.schemas import VerificationInput
+
+logger = logging.getLogger(__name__)
 
 
 class InputModule:
@@ -25,17 +28,20 @@ class InputModule:
         """加载所有指令和配置，按编号配对
 
         配对规则：instruct_1_X.json ↔ account_1_X.json，按X的数字顺序一一对应
+        如果某个账户文件缺失，则跳过对应的指令文件。
         """
         instruct_files = self._get_sorted_files(self.instruct_dir, "instruct_1_")
-        account_files = self._get_sorted_files(self.account_dir, "account_1_")
-
-        if len(instruct_files) != len(account_files):
-            raise ModuleError(
-                f"指令文件数({len(instruct_files)})与配置数({len(account_files)})不匹配"
-            )
+        account_index = {f.stem.replace("account_1_", ""): f
+                         for f in self._get_sorted_files(self.account_dir, "account_1_")}
 
         pairs: list[VerificationInput] = []
-        for inst_file, acct_file in zip(instruct_files, account_files):
+        for inst_file in instruct_files:
+            idx = inst_file.stem.replace("instruct_1_", "")
+            acct_file = account_index.get(idx)
+            if acct_file is None:
+                logger.warning(f"账户文件缺失 (instruct={inst_file.name})，跳过")
+                continue
+
             instruct_data = json.loads(inst_file.read_text(encoding="utf-8"))
             account_data = json.loads(acct_file.read_text(encoding="utf-8"))
 
@@ -49,6 +55,9 @@ class InputModule:
                 instruct_id=instruct_id,
                 account_id=account_id,
             ))
+
+        if not pairs:
+            raise ModuleError("没有找到任何有效的指令-配置配对")
 
         return pairs
 

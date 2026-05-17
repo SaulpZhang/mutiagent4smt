@@ -11,6 +11,7 @@ from modules.evaluation_module import EvaluationModule
 from modules.output_module import OutputModule
 from modules.verification_module import VerificationModule
 from modules.agent_builder import AgentBuilder
+from modules.generators import GeneratorRegistry, ValidPermissionGenerator
 from prompt.manager import PromptManager
 
 
@@ -26,11 +27,16 @@ class PipelineNodes:
         agent_builder = AgentBuilder()
         verification_module = VerificationModule()
 
+        # 注册内置生成器
+        registry = GeneratorRegistry()
+        registry.register(ValidPermissionGenerator())
+
         self._modules["generation"] = GenerationModule(
             intent_agent=agent_builder.build_intent_agent(),
             code_gen_agent=agent_builder.build_code_gen_agent(),
             prompt_manager=prompt_manager,
             verification_module=verification_module,
+            generator_registry=registry,
         )
         self._modules["evaluation"] = EvaluationModule(
             evaluation_agent=agent_builder.build_eval_agent(),
@@ -118,8 +124,12 @@ class PipelineNodes:
                     iteration=iteration,
                 )
             else:
+                # Only use generator on first attempt; retries use LLM for diversity
+                extras = state.get("extras", {})
+                force_llm = extras.get("attempt", 1) > 1
                 result = await gen_module.run_code_generation(
                     input_data, constraints, trace_logger=trace_logger,
+                    force_llm=force_llm,
                 )
             return {"smt_code": result}
         except Exception as e:
