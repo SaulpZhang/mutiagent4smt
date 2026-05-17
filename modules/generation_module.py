@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from agent.base import BaseAgent
+from agent.tool_agent import ToolAgent
 from config import settings
 from core.schemas import (
     ConstraintsList,
@@ -32,6 +33,7 @@ class GenerationModule:
         generator_registry: GeneratorRegistry | None = None,
         gen_mode: int = 1,
         user_defined_manager: Any = None,
+        tool_agent: ToolAgent | None = None,
     ) -> None:
         self.intent_agent = intent_agent
         self.code_gen_agent = code_gen_agent
@@ -40,6 +42,7 @@ class GenerationModule:
         self.generator_registry = generator_registry or GeneratorRegistry()
         self.gen_mode = gen_mode
         self.user_defined_manager = user_defined_manager
+        self.tool_agent = tool_agent
 
     async def run_intent_analysis(
         self,
@@ -118,103 +121,47 @@ class GenerationModule:
                             iteration=1,
                         )
 
-        # ── 首次生成：尝试使用 LLM管理的生成器（仅gen_mode=2且第一次尝试） ──
-        should_try_user_defined = (
+        # ── 首次生成：使用 ToolAgent（仅gen_mode=2且第一次尝试） ──
+        should_use_tools = (
             self.gen_mode == 2
-            and self.user_defined_manager is not None
+            and self.tool_agent is not None
             and not evaluation_feedback
             and not extra_hint
             and iteration <= 1
             and not force_llm
         )
-        user_defined_gen_name = None
-        if should_try_user_defined:
-            generator_name, reason = await self.user_defined_manager.dispatch(
-                input_data.instruction
-            )
-            if generator_name is not None:
-                try:
-                    generate_fn = self.user_defined_manager.load_generator_function(
-                        generator_name
-                    )
-                    result = generate_fn(input_data.account_data, constraints)
-                    if trace_logger:
-                        trace_logger.log(
-                            f"user_defined_generator:{generator_name}",
-                            "",
-                            f"Instruction: {input_data.instruction}\nDispatch: {reason}",
-                            result.code,
-                            iteration=1,
-                            extra="LLM管理的生成器（无LLM代码生成调用）",
-                        )
-                    return result
-                except Exception as e:
-                    if trace_logger:
-                        trace_logger.log(
-                            f"user_defined_generator:{generator_name}",
-                            "",
-                            f"生成器执行失败: {e}",
-                            "回退到LLM生成",
-                            iteration=1,
-                        )
-                    # 回退到 LLM
-            else:
-                # 没有匹配的生成器 → 让LLM创建一个新的
+        if should_use_tools:
+            try:
+                prompt_text = (
+                    f"验证指令：{input_data.instruction}\n\n"
+                    f"IAM配置：{str(input_data.account_data)}"
+                )
+                constraints_json = constraints.model_dump_json() if hasattr(constraints, "model_dump_json") else str(constraints)
+
+                result = await self.tool_agent.run(
+                    prompt=prompt_text,
+                    constraints_json=constraints_json,
+                    account_data=input_data.account_data,
+                )
                 if trace_logger:
                     trace_logger.log(
-                        "user_defined_generator:create",
+                        "tool_agent",
+                        self.tool_agent.system_prompt[:200],
+                        prompt_text,
+                        result.code,
+                        iteration=1,
+                        extra="ToolAgent 工具驱动生成",
+                    )
+                return result
+            except Exception as e:
+                if trace_logger:
+                    trace_logger.log(
+                        "tool_agent",
                         "",
-                        f"Instruction: {input_data.instruction}\nDispatch: {reason}",
-                        "尝试创建新的生成器",
+                        f"ToolAgent 执行失败: {e}",
+                        "回退到LLM生成",
                         iteration=1,
                     )
-                new_name, create_msg = await self.user_defined_manager.create_generator(
-                    instruction=input_data.instruction,
-                    account_data=input_data.account_data,
-                    constraints=constraints,
-                )
-                if new_name is not None:
-                    if trace_logger:
-                        trace_logger.log(
-                            f"user_defined_generator:created:{new_name}",
-                            "",
-                            create_msg,
-                            "新生成器已创建，立即使用",
-                            iteration=1,
-                        )
-                    try:
-                        generate_fn = self.user_defined_manager.load_generator_function(
-                            new_name
-                        )
-                        result = generate_fn(input_data.account_data, constraints)
-                        if trace_logger:
-                            trace_logger.log(
-                                f"user_defined_generator:{new_name}",
-                                "",
-                                f"新生成器执行成功: {new_name}",
-                                result.code,
-                                iteration=1,
-                                extra="LLM创建的新生成器",
-                            )
-                        return result
-                    except Exception as e:
-                        if trace_logger:
-                            trace_logger.log(
-                                f"user_defined_generator:{new_name}",
-                                "",
-                                f"新生成器执行失败: {e}",
-                                "回退到LLM生成",
-                                iteration=1,
-                            )
-                else:
-                    if trace_logger:
-                        trace_logger.log(
-                            "user_defined_generator:create_failed",
-                            "",
-                            create_msg,
-                            "创建生成器失败，回退到LLM生成",
-                            iteration=1,
-                        )
 
         # ── LLM生成（回退或语义修正模式） ──
         if evaluation_feedback:

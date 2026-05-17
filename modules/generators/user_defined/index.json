@@ -1,1 +1,24 @@
-{"generators": []}
+{
+  "generators": [
+    {
+      "name": "bucket_policy_validator",
+      "version": "1.0.0",
+      "description": "验证桶 compatible-special-format-0 的绑定策略中是否存在有效的授权配置",
+      "input": "IAM配置字典，包含account_id、buckets信息，其中bucket_policy为JSON字符串",
+      "output": "可执行的SMT-LIB V2代码，用于验证桶策略中Effect、Action、Principal、Condition等字段的合法性",
+      "examples": [
+        "验证桶 compatible-special-format-0 的绑定策略中是否存在有效的授权配置"
+      ]
+    },
+    {
+      "name": "bucket_policy_validator",
+      "version": "1.0.0",
+      "description": "验证存储桶策略中是否存在有效的访问授权，适用于华为云IAM格式的策略",
+      "input": "IAM配置字典，包含bucket_policy字段（JSON字符串）和相关元数据",
+      "output": "可执行的SMT-LIB V2代码，用于验证策略字段的存在性和规范性",
+      "examples": [
+        "Check if there are effective access grants in the policy attached to bucket compatible-special-format-1"
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from config import settings
 from agent.llm_client import LLMClient
+from agent.tool_agent import ToolAgent, ToolDef
 from modules.agents.intent_agent import IntentUnderstandingAgent
 from modules.agents.code_gen_agent import CodeGenerationAgent
 from modules.agents.eval_agent import EvaluationAgent
@@ -56,4 +57,45 @@ class AgentBuilder:
             name="evaluation",
             system_prompt=self.SYSTEM_PROMPTS["eval"],
             llm_client=self._build_client(settings.agent_3_model),
+        )
+
+    def build_tool_code_gen_agent(self) -> ToolAgent:
+        """为 gen_mode=2 构建工具增强的代码生成 Agent"""
+        from modules.tools.smt_tools import TOOL_DEFINITIONS
+        from modules.tools.smt_tools import (
+            tool_parse_iam_policy,
+            tool_smt_declare_variables,
+            tool_smt_assert_config,
+            tool_smt_validation_funcs,
+            tool_smt_contradiction_check,
+            tool_smt_allow_deny_combine,
+            tool_smt_assemble,
+            tool_smt_verify,
+        )
+
+        fn_map = {
+            "parse_iam_policy": tool_parse_iam_policy,
+            "smt_declare_variables": tool_smt_declare_variables,
+            "smt_assert_config": tool_smt_assert_config,
+            "smt_validation_funcs": tool_smt_validation_funcs,
+            "smt_contradiction_check": tool_smt_contradiction_check,
+            "smt_allow_deny_combine": tool_smt_allow_deny_combine,
+            "smt_assemble": tool_smt_assemble,
+            "smt_verify": tool_smt_verify,
+        }
+
+        tools = [
+            ToolDef(
+                name=td["name"],
+                description=td["description"],
+                fn=fn_map[td["name"]],
+                parameters=td["parameters"],
+            )
+            for td in TOOL_DEFINITIONS
+        ]
+
+        return ToolAgent(
+            name="code_gen_tools",
+            llm_client=self._build_client(settings.agent_2_model),
+            tools=tools,
         )

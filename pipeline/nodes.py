@@ -32,29 +32,10 @@ class PipelineNodes:
         registry = GeneratorRegistry()
         registry.register(ValidPermissionGenerator())
 
-        # gen_mode=2: 创建 LLM-Managed Generator 管理器
-        user_defined_manager = None
+        # gen_mode=2: 构建工具增强的 Agent
+        tool_agent = None
         if gen_mode == 2:
-            from pathlib import Path as _Path
-            from agent.llm_client import LLMClient as _LLMClient
-            from modules.generators.user_defined_manager import (
-                UserDefinedGeneratorManager as _UDGM,
-            )
-
-            dispatch_llm = _LLMClient(
-                model_name=(
-                    settings.agent_2_model or settings.common_model or settings.model_name
-                ),
-                temperature=0.0,
-            )
-            base_path = str(
-                _Path(__file__).resolve().parent.parent
-                / "modules" / "generators" / "user_defined"
-            )
-            user_defined_manager = _UDGM(
-                base_dir=base_path,
-                llm_client=dispatch_llm,
-            )
+            tool_agent = agent_builder.build_tool_code_gen_agent()
 
         self._modules["generation"] = GenerationModule(
             intent_agent=agent_builder.build_intent_agent(),
@@ -63,7 +44,8 @@ class PipelineNodes:
             verification_module=verification_module,
             generator_registry=registry,
             gen_mode=self.gen_mode,
-            user_defined_manager=user_defined_manager,
+            user_defined_manager=None,
+            tool_agent=tool_agent,
         )
         self._modules["evaluation"] = EvaluationModule(
             evaluation_agent=agent_builder.build_eval_agent(),
