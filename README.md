@@ -10,12 +10,14 @@
 
 | 实验 | 方案 | 模型 | 总数 | PASS@1 | 有效PASS@1 | 说明 |
 |------|------|------|------|--------|-----------|------|
-| 🏆 **v15** | 3-Agent + Generator | deepseek-chat | 126 | **95.24%** | **98.35%** | 稳定最佳，6错误中5个为标签异常 |
-| 🏆 **v14** | 3-Agent + Generator (httpx修复) | deepseek-chat | 125 | **96.00%** | **99.17%** | 不含缺失用例，100%约束满足 |
-| 🏆 **v13** | Generator 规则引擎 | generator | 125 | **96.00%** | **100.00%** | 全部走程序化生成，排除标签异常后全对 |
-| v11 | 3-Agent (Qwen3-Coder) | Qwen3-Coder-30B-A3B | 126 | 73.81% | 76.86% | 无Generator辅助 |
-| run_063647 | 3-Agent (Prompt优化) | deepseek-chat | 126 | 67.46% | 70.25% | Prompt优化基线 |
-| run_172206 | 3-Agent (Baseline) | deepseek-chat | 126 | 63.49% | 62.81% | 首次基线实验 |
+| 实验 | 方案 | 模型 | gen_mode | PASS@1 | 有效PASS@1 | 说明 |
+|------|------|------|----------|--------|-----------|------|
+| 🏆 **v15** | 3-Agent + Generator | deepseek-chat | 1 | **95.24%** | **98.35%** | 稳定最佳，6错误中5个为标签异常 |
+| 🏆 **v14** | 3-Agent + Generator (httpx修复) | deepseek-chat | 1 | **96.00%** | **99.17%** | 不含缺失用例，100%约束满足 |
+| 🏆 **v13** | Generator 规则引擎 | generator | 1 | **96.00%** | **100.00%** | 全部走程序化生成，排除标签异常后全对 |
+| v11 | 3-Agent (Qwen3-Coder) | Qwen3-Coder-30B-A3B | 0 | 73.81% | 76.86% | 无Generator辅助 |
+| run_063647 | 3-Agent (Prompt优化) | deepseek-chat | 0 | 67.46% | 70.25% | Prompt优化基线 |
+| run_172206 | 3-Agent (Baseline) | deepseek-chat | 0 | 63.49% | 62.81% | 首次基线实验 |
 
 ## 方案演进
 
