@@ -127,6 +127,7 @@ class GenerationModule:
             and iteration <= 1
             and not force_llm
         )
+        user_defined_gen_name = None
         if should_try_user_defined:
             generator_name, reason = await self.user_defined_manager.dispatch(
                 input_data.instruction
@@ -157,6 +158,63 @@ class GenerationModule:
                             iteration=1,
                         )
                     # 回退到 LLM
+            else:
+                # 没有匹配的生成器 → 让LLM创建一个新的
+                if trace_logger:
+                    trace_logger.log(
+                        "user_defined_generator:create",
+                        "",
+                        f"Instruction: {input_data.instruction}\nDispatch: {reason}",
+                        "尝试创建新的生成器",
+                        iteration=1,
+                    )
+                new_name, create_msg = await self.user_defined_manager.create_generator(
+                    instruction=input_data.instruction,
+                    account_data=input_data.account_data,
+                    constraints=constraints,
+                )
+                if new_name is not None:
+                    if trace_logger:
+                        trace_logger.log(
+                            f"user_defined_generator:created:{new_name}",
+                            "",
+                            create_msg,
+                            "新生成器已创建，立即使用",
+                            iteration=1,
+                        )
+                    try:
+                        generate_fn = self.user_defined_manager.load_generator_function(
+                            new_name
+                        )
+                        result = generate_fn(input_data.account_data, constraints)
+                        if trace_logger:
+                            trace_logger.log(
+                                f"user_defined_generator:{new_name}",
+                                "",
+                                f"新生成器执行成功: {new_name}",
+                                result.code,
+                                iteration=1,
+                                extra="LLM创建的新生成器",
+                            )
+                        return result
+                    except Exception as e:
+                        if trace_logger:
+                            trace_logger.log(
+                                f"user_defined_generator:{new_name}",
+                                "",
+                                f"新生成器执行失败: {e}",
+                                "回退到LLM生成",
+                                iteration=1,
+                            )
+                else:
+                    if trace_logger:
+                        trace_logger.log(
+                            "user_defined_generator:create_failed",
+                            "",
+                            create_msg,
+                            "创建生成器失败，回退到LLM生成",
+                            iteration=1,
+                        )
 
         # ── LLM生成（回退或语义修正模式） ──
         if evaluation_feedback:

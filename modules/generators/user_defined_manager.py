@@ -17,6 +17,16 @@ from typing import Any, Callable
 from agent.llm_client import LLMClient
 from core.schemas import ConstraintsList, SMTLibCode
 
+# 项目根目录（用于定位prompt模板）
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_GENERATOR_PROMPT_PATH = _PROJECT_ROOT / "prompt" / "templates" / "create_generator.txt"
+
+CREATOR_SYSTEM_PROMPT = (
+    "You are an expert at creating Python code generators for SMT-LIB V2 verification. "
+    "Given an IAM policy verification instruction and its config, "
+    "create a reusable Python generator function that produces valid SMT-LIB V2 code. "
+    "Output JSON with generator_name, spec, and generator_code fields."
+)
 
 DISPATCH_SYSTEM_PROMPT = (
     "You are a dispatch router for SMT-LIB V2 code generators. "
@@ -70,6 +80,103 @@ class UserDefinedGeneratorManager:
 
     def _generator_name_exists(self, name: str) -> bool:
         return any(g.get("name") == name for g in self.list_generators())
+
+    def _load_creator_prompt(self) -> str:
+        """加载create_generator.txt模板"""
+        if _GENERATOR_PROMPT_PATH.exists():
+            return _GENERATOR_PROMPT_PATH.read_text(encoding="utf-8")
+        return "# Generate an SMT-LIB V2 code generator"
+
+    async def create_generator(
+        self,
+        instruction: str,
+        account_data: dict,
+        constraints: ConstraintsList,
+    ) -> tuple[str | None, str]:
+        """根据验证指令创建新的用户自定义生成器
+
+        流程：
+        1. 加载create_generator.txt模板
+        2. LLM根据instruction+config+constraints生成generator
+        3. 解析LLM返回的JSON（generator_name, spec, generator_code）
+        4. 保存到 user_defined/generators/{name}/
+        5. 更新index.json
+
+        Args:
+            instruction: 验证指令文本
+            account_data: IAM配置字典
+            constraints: 约束列表
+
+        Returns:
+            (generator_name, status_message)
+            - generator_name: 成功时返回新生成器名称，失败时返回None
+            - status_message: 状态说明
+        """
+        template = self._load_creator_prompt()
+
+        # 构造用户消息：包含instruction, account_data, constraints
+        constraints_json = constraints.model_dump_json(indent=2) if hasattr(constraints, "model_dump_json") else str(constraints)
+        user_message = (
+            f"## Verification Instruction\n\n{instruction}\n\n"
+            f"## IAM Config\n\n```json\n{json.dumps(account_data, indent=2, ensure_ascii=False)}\n```\n\n"
+            f"## Constraints\n\n```json\n{constraints_json}\n```\n\n"
+            f"---\n\n"
+            f"Now create a generator for this instruction based on the rules above. "
+            f"Output JSON only."
+        )
+
+        try:
+            raw = await self.llm_client.chat(
+                system_prompt=template,
+                user_message=user_message,
+                json_output=True,
+            )
+            data = json.loads(raw)
+        except Exception as e:
+            return None, f"generator creation failed: LLM error: {e}"
+
+        generator_name = data.get("generator_name", "").strip()
+        spec = data.get("spec", {})
+        generator_code = data.get("generator_code", "")
+
+        if not generator_name or not generator_code:
+            return None, "generator creation failed: missing generator_name or generator_code"
+
+        # sanitize name
+        import re as _re
+        generator_name = _re.sub(r'[^a-z0-9_]', '', generator_name.lower().replace(' ', '_'))
+
+        if not generator_name:
+            generator_name = f"gen_{len(self.list_generators()) + 1}"
+
+        # 保存generator
+        try:
+            gen_dir = self._get_generator_dir(generator_name)
+            gen_dir.mkdir(parents=True, exist_ok=True)
+
+            # 写入 spec.json
+            spec_path = gen_dir / "spec.json"
+            spec_data = {
+                "name": generator_name,
+                "version": spec.get("version", "1.0.0"),
+                "description": spec.get("description", ""),
+                "input": spec.get("input", {}),
+                "output": spec.get("output", {}),
+                "examples": spec.get("examples", [instruction]),
+            }
+            spec_path.write_text(json.dumps(spec_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            # 写入 generator.py
+            code_path = gen_dir / "generator.py"
+            code_path.write_text(generator_code, encoding="utf-8")
+
+            # 更新 index.json
+            self.index.setdefault("generators", []).append(spec_data)
+            self._save_index()
+
+            return generator_name, f"created generator '{generator_name}'"
+        except Exception as e:
+            return None, f"generator creation failed: save error: {e}"
 
     def _build_dispatch_user_message(self, instruction: str) -> str:
         """构建包含可用生成器列表和验证指令的用户消息"""
