@@ -82,7 +82,10 @@ class PipelineNodes:
         evaluation = state.get("evaluation_result")
         iteration = state.get("iteration", 0)
         current_code: SMTLibCode | None = state.get("smt_code")
-        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
+        trace_logger = self._make_logger(state)
+        # 存入 extras 供其他节点复用
+        extras = dict(state.get("extras", {}))
+        extras["trace_logger"] = trace_logger
 
         if not input_data or not constraints:
             return {"error_message": "缺少输入数据或约束列表"}
@@ -104,7 +107,7 @@ class PipelineNodes:
                 result = await gen_module.run_code_generation(
                     input_data, constraints, trace_logger=trace_logger,
                 )
-            return {"smt_code": result}
+            return {"smt_code": result, "extras": extras}
         except Exception as e:
             return {"error_message": f"代码生成失败: {e}"}
 

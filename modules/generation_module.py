@@ -78,6 +78,7 @@ class GenerationModule:
             prompt=prompt_text,
             constraints_json=constraints_json,
             account_data=input_data.account_data,
+            trace_logger=trace_logger,
         )
         if trace_logger:
             trace_logger.log(

@@ -51,14 +51,12 @@ class AgentBuilder:
         from modules.tools.smt_tools import TOOL_DEFINITIONS
         from modules.tools.smt_tools import (
             tool_parse_iam_policy,
-            tool_smt_declare_and_assign,
-            tool_smt_verify,
+            tool_execute_z3_python,
         )
 
         fn_map = {
             "parse_iam_policy": tool_parse_iam_policy,
-            "smt_declare_and_assign": tool_smt_declare_and_assign,
-            "smt_verify": tool_smt_verify,
+            "execute_z3_python": tool_execute_z3_python,
         }
 
         tools = [

@@ -1,9 +1,8 @@
 """SMT-LIB V2 代码生成工具集
 
 工具列表:
-1. parse_iam_policy       — 自动执行，解析IAM配置
-2. smt_declare_and_assign — IAM JSON → declare-const + assert 赋值
-3. smt_verify             — Z3 语法检查
+1. parse_iam_policy   — 自动执行，解析IAM配置
+2. execute_z3_python  — 执行 Z3 Python 代码并导出 SMT-LIB V2
 """
 
 from __future__ import annotations
@@ -166,103 +165,76 @@ def tool_parse_iam_policy(account_data: dict) -> str:
     }, ensure_ascii=False)
 
 
-# ── 工具 ②: smt_declare_and_assign ──
+# ── 工具 ②: execute_z3_python ──
 
-def tool_smt_declare_and_assign(statements_json: str) -> str:
-    """IAM JSON → declare-const + assert 赋值代码段。"""
-    data = json.loads(statements_json)
-    statements = data.get("statements", [])
-    lines: list[str] = []
+def tool_execute_z3_python(code: str) -> str:
+    """执行 Z3 Python 代码并返回 SMT-LIB V2 代码。
 
-    for si, stmt in enumerate(statements):
-        pfx = f"s{si + 1}"
-        lines.append(f";; ── Statement {si + 1} ──")
+    代码必须定义一个 solver 变量 (z3.Solver())。
+    工具自动执行 solver.to_smt2() 导出标准 SMT-LIB V2。
 
-        # Effect
-        if stmt.get("Effect"):
-            lines.append(f"(declare-const {pfx}_has_effect Bool)")
-            lines.append(f"(declare-const {pfx}_effect_value String)")
-            lines.append(f"(assert (= {pfx}_has_effect true))")
-            lines.append(f"(assert (= {pfx}_effect_value {_smt_escape(stmt['Effect'])}))")
+    Returns:
+        SMT-LIB V2 代码（含 check-sat / exit），或错误信息（以"错误："或"执行错误："开头）。
+    """
+    import io
+    import time
+    import traceback
+    from contextlib import redirect_stderr, redirect_stdout
 
-        # Action
-        if stmt.get("Action"):
-            lines.append(f"(declare-const {pfx}_has_action Bool)")
-            lines.append(f"(declare-const {pfx}_action_value String)")
-            actions = stmt["Action"]
-            val = actions[0] if actions else ""
-            lines.append(f"(assert (= {pfx}_has_action {'true' if val else 'false'}))")
-            lines.append(f"(assert (= {pfx}_action_value {_smt_escape(val)}))")
+    # 预导入 Z3，注入 globals
+    import z3 as _z3
+    safe_globals = {k: getattr(_z3, k) for k in dir(_z3) if not k.startswith("_")}
+    # 补充安全内置
+    safe_globals.update({
+        "True": True, "False": False, "None": None,
+        "range": range, "len": len, "str": str, "int": int,
+        "float": float, "bool": bool, "list": list, "dict": dict,
+        "tuple": tuple, "set": set, "enumerate": enumerate, "zip": zip,
+        "isinstance": isinstance, "type": type, "object": object,
+        "print": print, "Exception": Exception,
+        "sorted": sorted, "min": min, "max": max,
+        "any": any, "all": all,
+        "ValueError": ValueError, "TypeError": TypeError, "KeyError": KeyError,
+        "reversed": reversed, "map": map, "filter": filter,
+        "__builtins__": {},
+    })
 
-        # Principal
-        if stmt.get("Principal"):
-            principal = stmt["Principal"]
-            if principal:
-                p_type = next(iter(principal.keys()))
-                p_vals = principal[p_type]
-                p_val = p_vals[0] if p_vals else ""
-                lines.append(f"(declare-const {pfx}_has_principal Bool)")
-                lines.append(f"(declare-const {pfx}_has_principal_type Bool)")
-                lines.append(f"(declare-const {pfx}_principal_type String)")
-                lines.append(f"(declare-const {pfx}_has_principal_value Bool)")
-                lines.append(f"(declare-const {pfx}_principal_value String)")
-                lines.append(f"(assert (= {pfx}_has_principal true))")
-                lines.append(f"(assert (= {pfx}_has_principal_type true))")
-                lines.append(f"(assert (= {pfx}_principal_type {_smt_escape(p_type)}))")
-                lines.append(f"(assert (= {pfx}_has_principal_value true))")
-                lines.append(f"(assert (= {pfx}_principal_value {_smt_escape(p_val)}))")
-            else:
-                lines.append(f"(declare-const {pfx}_has_principal Bool)")
-                lines.append(f"(declare-const {pfx}_has_principal_type Bool)")
-                lines.append(f"(declare-const {pfx}_has_principal_value Bool)")
-                lines.append(f"(assert (= {pfx}_has_principal false))")
-                lines.append(f"(assert (= {pfx}_has_principal_type false))")
-                lines.append(f"(assert (= {pfx}_has_principal_value false))")
+    # 自动去掉 from z3 import *（已在 safe_globals 中预导入）
+    clean_code = "\n".join(
+        line for line in code.split("\n")
+        if "from z3 import" not in line and "import z3" not in line
+    )
 
-        # Condition
-        cond_block = stmt.get("Condition", {})
-        if cond_block:
-            conds = _extract_conditions(stmt)
-            cond_count = len(conds)
-            lines.append(f"(declare-const {pfx}_has_condition Bool)")
-            lines.append(f"(assert (= {pfx}_has_condition true))")
-            for ci, (op, key, val) in enumerate(conds):
-                cc = ci + 1
-                lines.append(f"(declare-const {pfx}_cond_{cc}_operator String)")
-                lines.append(f"(declare-const {pfx}_cond_{cc}_key String)")
-                lines.append(f"(declare-const {pfx}_cond_{cc}_value String)")
-                lines.append(f"(assert (= {pfx}_cond_{cc}_operator {_smt_escape(op)}))")
-                lines.append(f"(assert (= {pfx}_cond_{cc}_key {_smt_escape(key)}))")
-                lines.append(f"(assert (= {pfx}_cond_{cc}_value {_smt_escape(val)}))")
-        elif "Condition" in stmt:
-            lines.append(f"(declare-const {pfx}_has_condition Bool)")
-            lines.append(f"(assert (= {pfx}_has_condition false))")
+    f_out = io.StringIO()
+    f_err = io.StringIO()
+    start = time.time()
 
-        lines.append("")
+    try:
+        with redirect_stdout(f_out), redirect_stderr(f_err):
+            exec(clean_code, safe_globals)
 
-    return "\n".join(lines)
+        solver = safe_globals.get("solver")
+        if solver is None:
+            return "错误：代码未定义 'solver' 变量（请添加 solver = Solver()）"
 
+        smt = solver.to_smt2()
+        if not smt.strip():
+            return "错误：solver 为空（请添加断言到 solver）"
 
-# ── 工具 ③: smt_verify ──
-
-def tool_smt_verify(code: str) -> str:
-    """检查 SMT 代码的语法正确性（含未定义常量检测）。"""
-    from utils.smt_executor import SMTExecutor
-    executor = SMTExecutor()
-    is_executable, output, _ = executor.execute(code)
-
-    # Z3 对未定义常量会当作自由变量处理并返回 sat，但输出中会包含 (error
-    if "(error" in output.lower():
-        return f"语法错误:\n{output[:500]}"
-
-    if is_executable:
-        if "sat" in output:
-            return "语法正确，Z3 返回: sat"
-        elif "unsat" in output:
-            return f"语法正确，Z3 返回: unsat"
-        return f"语法正确，Z3 返回: {output[:200]}"
-    else:
-        return f"语法错误:\n{output[:500]}"
+        smt += "\n(exit)\n"
+        elapsed = time.time() - start
+        stdout = f_out.getvalue().strip()
+        extra_parts = []
+        if stdout:
+            extra_parts.append(f"; print输出: {stdout[:200]}")
+        extra_parts.append(f"; Z3执行: {elapsed:.2f}s")
+        smt += "\n".join(extra_parts)
+        return smt
+    except Exception as e:
+        tb = traceback.format_exc()
+        tb_lines = tb.split("\n")
+        tb_short = "\n".join(tb_lines[-8:]) if len(tb_lines) > 8 else tb
+        return f"执行错误：{e}\n{tb_short}"
 
 
 # ── 工具注册元数据 ──
@@ -283,26 +255,15 @@ TOOL_DEFINITIONS = [
         },
     },
     {
-        "name": "smt_declare_and_assign",
-        "description": "接收 parse_iam_policy 的输出JSON，生成declare-const变量声明和assert赋值，返回SMT变量声明+断言代码段。",
+        "name": "execute_z3_python",
+        "description": "执行 Z3 Python 代码并返回 SMT-LIB V2。代码必须定义 solver = Solver() 并添加断言。成功后返回标准 SMT-LIB V2（含 check-sat/exit）。失败返回错误信息。",
         "parameters": {
             "type": "object",
             "properties": {
-                "statements_json": {
+                "code": {
                     "type": "string",
-                    "description": "parse_iam_policy 返回的 JSON 字符串",
+                    "description": "完整的 Z3 Python 代码。代码内必须: from z3 import *; solver = Solver(); ...添加断言... ",
                 }
-            },
-            "required": ["statements_json"],
-        },
-    },
-    {
-        "name": "smt_verify",
-        "description": "用Z3检查SMT代码的语法正确性。入参 code 是完整的SMT-LIB V2代码文本。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "code": {"type": "string", "description": "完整的SMT-LIB V2代码文本"},
             },
             "required": ["code"],
         },

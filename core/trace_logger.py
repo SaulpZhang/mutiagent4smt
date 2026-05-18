@@ -76,3 +76,12 @@ class TraceLogger:
             "=" * 60 + "\n",
         ]
         self._append("".join(parts))
+
+    def log_react_message(self, step: int, node: str, content: str) -> None:
+        """记录 ReAct 循环中的单步消息，追加到当前attempt的log文件"""
+        parts = [
+            f"── Step {step} [{node}] ──\n",
+            content,
+            "\n\n",
+        ]
+        self._append("".join(parts))
