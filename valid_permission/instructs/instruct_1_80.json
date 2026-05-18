@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "委托 25dba22b-f177-4f5e-968d-113a626f6383 的信任策略是否设置了有效的访问授权"
+}

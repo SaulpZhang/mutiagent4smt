@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "bucket_policy",
+  "instruct": "验证桶 compatible-special-format-0 的绑定策略中是否存在有效的授权配置"
+}

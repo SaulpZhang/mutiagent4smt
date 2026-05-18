@@ -1,0 +1,8 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "buckets": {
+    "bucket_name": "obs-date-operator-alias-3",
+    "bucket_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"listBucket\"], \"Principal\": {\"ID\": [\"*\"]}, \"Condition\": {\"dategreaterthan\": {\"g:CurrentTime\": [\"2024-04-23T02:55:31.60Z\"]}}}]}",
+    "bucket_acl": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><AccessControlPolicy xmlns=\"http://obs.cn-north-4.myhuaweicloud.com/doc/2015-06-30/\"><Owner><ID>b4bf1b36d9ca43d984fbcb9491b6fce9</ID></Owner><AccessControlList></AccessControlList></AccessControlPolicy>"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "Check if the trust policy of agency 4d6c51e6-a518-425c-b184-98158110b025 has effective authorization"
+}

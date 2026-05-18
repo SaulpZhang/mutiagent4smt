@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "Verify whether valid access grants exist in the trust policy of agency 7d2fc27e-32bf-44f3-8927-e55436e03851"
+}

@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "string_7",
+    "agency_id": "7d4d0802-0315-43cd-b478-e4d212a041c5",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:ResourceOrgId\": [\"aaa\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequalsnot\": {\"g:ResourceOrgId\": [\"bbb\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

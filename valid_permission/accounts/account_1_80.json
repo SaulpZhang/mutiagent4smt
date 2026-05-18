@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "ip_7",
+    "agency_id": "25dba22b-f177-4f5e-968d-113a626f6383",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"ipaddressifexists\": {\"g:VpcSourceIp\": [\"0.0.2.0/32\"]}, \"ipaddress\": {\"g:SourceIp\": [\"0.0.1.0/32\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

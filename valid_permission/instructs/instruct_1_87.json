@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "检查委托 33db57c2-d252-4c48-8b5e-8eee032a1cdf 信任策略中的权限配置是否有效"
+}

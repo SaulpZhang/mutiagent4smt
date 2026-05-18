@@ -1,0 +1,129 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "buckets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "bucket_name": {
+            "type": "string"
+          },
+          "bucket_policy": {
+            "type": "string"
+          },
+          "bucket_acl": {
+            "type": "string"
+          }
+        },
+        "required": ["bucket_acl", "bucket_name", "bucket_policy"]
+      }
+    },
+    "agencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "agency_name": {
+            "type": "string"
+          },
+          "agency_id": {
+            "type": "string"
+          },
+          "attached_policy_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "trust_policy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "agency_id",
+          "agency_name",
+          "attached_policy_ids",
+          "trust_policy"
+        ]
+      }
+    },
+    "users": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string"
+          },
+          "attached_policy_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "user_name": {
+            "type": "string"
+          }
+        },
+        "required": ["attached_policy_ids", "user_id", "user_name"]
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "attached_policy_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "group_name": {
+            "type": "string"
+          }
+        },
+        "required": ["attached_policy_ids", "group_name", "user_ids"]
+      }
+    },
+    "admin_group_user_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "identity_policies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "policy": {
+            "type": "string"
+          },
+          "policy_id": {
+            "type": "string"
+          },
+          "policy_name": {
+            "type": "string"
+          },
+          "is_system": {
+            "type": "boolean"
+          }
+        },
+        "required": ["is_system", "policy", "policy_id", "policy_name"]
+      }
+    }
+  },
+  "required": ["account_id"]
+}

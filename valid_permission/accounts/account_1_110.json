@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "string_0",
+    "agency_id": "2fa0ca4e-786b-4a34-9ee0-54157d6406ac",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:Referer\": [\"abc\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

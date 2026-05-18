@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "principal_type_2",
+    "agency_id": "049ae5fb-35e8-4d00-a9ef-21f3f8512171",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"sts:agencies:assume\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalType\": [\"WrongType\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

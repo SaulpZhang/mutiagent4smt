@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "bucket_policy",
+  "instruct": "Verify if the bucket policy associated with obs-condition-keys-without-z3-1 has valid permissions"
+}

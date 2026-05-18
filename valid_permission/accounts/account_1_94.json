@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "principal_account_1",
+    "agency_id": "c6c3f471-0eb9-4fc7-8bcb-295af83e873c",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalAccount\": [\"?\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

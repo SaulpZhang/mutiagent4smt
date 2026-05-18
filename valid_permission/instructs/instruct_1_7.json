@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "bucket_policy",
+  "instruct": "Verify if the bucket policy associated with conflict-operator-and-condition-key-0 has valid permissions"
+}

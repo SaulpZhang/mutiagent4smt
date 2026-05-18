@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "resource_or_principal_tag_0",
+    "agency_id": "e6062000-7cc9-434e-8ce8-16ae6161be85",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:ResourceTag/name\": [\"233\"], \"g:PrincipalTag/name\": [\"name\"], \"g:PrincipalTag/Name\": [\"name\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

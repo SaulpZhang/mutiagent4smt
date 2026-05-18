@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "principal_type_0",
+    "agency_id": "4d6c51e6-a518-425c-b184-98158110b025",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"sts:agencies:assume\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequalsnot\": {\"g:PrincipalType\": [\"ExternalUser\", \"User\", \"Anonymous\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

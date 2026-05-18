@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "compatible_wrong_usage_0",
+    "agency_id": "ba1eb64c-ec94-42e9-acf0-7b87922328cf",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:TagKeys\": [\"key\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

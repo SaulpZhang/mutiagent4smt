@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "bucket_policy",
+  "instruct": "conflict-operator-and-condition-key-3 桶的策略是否设置了有效的访问权限"
+}

@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "检测委托 e44d0edb-4d15-48cc-a533-c6b1c4611a66 的信任策略是否包含可用的权限配置"
+}

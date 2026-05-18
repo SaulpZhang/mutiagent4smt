@@ -1,0 +1,8 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "buckets": {
+    "bucket_name": "obs-condition-keys-without-z3-2",
+    "bucket_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"listBucket\"], \"Principal\": {\"ID\": [\"*\"]}, \"Condition\": {\"stringmatch\": {\"ServiceAgency\": [\"prefix*suffix\"], \"g:PrincipalUrn\": [\"sts:*:*:assumed-agency:prefix-mid-suffix/session\"]}}}]}",
+    "bucket_acl": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><AccessControlPolicy xmlns=\"http://obs.cn-north-4.myhuaweicloud.com/doc/2015-06-30/\"><Owner><ID>b4bf1b36d9ca43d984fbcb9491b6fce9</ID></Owner><AccessControlList></AccessControlList></AccessControlPolicy>"
+  }
+}

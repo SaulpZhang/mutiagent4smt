@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "ip_2",
+    "agency_id": "8f14f0a2-5043-4fcb-a769-7cb9d52062c7",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"account1\"]}, \"Condition\": {\"ipaddress\": {\"g:SourceIp\": [\"255.255.255.255/30\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"account1\"]}, \"Condition\": {\"ipaddress\": {\"g:SourceIp\": [\"255.255.255.255/31\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"account1\"]}, \"Condition\": {\"ipaddress\": {\"g:SourceIp\": [\"255.255.255.252/32\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

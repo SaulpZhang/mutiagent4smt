@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "regexp_union_check_2",
+    "agency_id": "c4330b63-a90d-42bb-a7f3-d256fcd8acc7",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"s3:ListBucket\"], \"Principal\": {\"IAM\": [\"123\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalUrn\": [\"iam::123:user:*ab*\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"s3:ListBucket\"], \"Principal\": {\"IAM\": [\"123\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalUrn\": [\"iam::123:user:*ab\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"s3:ListBucket\"], \"Principal\": {\"IAM\": [\"123\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalUrn\": [\"iam::123:user:ab*\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"s3:ListBucket\"], \"Principal\": {\"IAM\": [\"123\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalUrn\": [\"iam::123:user:*??ab?*\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

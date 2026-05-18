@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "bucket_policy",
+  "instruct": "OBS 桶 obs-string-operator-alias-2 上所绑定的桶策略是否存在有效授权"
+}

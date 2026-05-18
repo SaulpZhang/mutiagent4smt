@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "number_6",
+    "agency_id": "47ef10e4-27de-4378-914f-3f62833945e0",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"numericgreaterthanequals\": {\"g:MfaAge\": [\"3\"]}, \"numericlessthanequals\": {\"g:MfaAge\": [\"2\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

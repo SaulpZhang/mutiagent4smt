@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "信任委托 30dca084-9f1d-4f8a-a483-e784fbfdea27 的信任策略是否包含有效权限"
+}

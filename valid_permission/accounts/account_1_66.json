@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "date_0",
+    "agency_id": "e604d6bd-467f-44a8-bf51-cb9f510c05e8",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"dateequals\": {\"g:CurrentTime\": [\"2015-07-01T12:00:00Z\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

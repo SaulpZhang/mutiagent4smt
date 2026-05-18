@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "string_equals_ignore_case_1",
+    "agency_id": "40d6b3d9-a2fe-404e-957a-1d5d288bd3ab",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:PrincipalAccount\": [\"abcd\"]}, \"stringequalsignorecase\": {\"g:PrincipalAccount\": [\"abcE\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

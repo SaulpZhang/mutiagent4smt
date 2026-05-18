@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "bucket_policy",
+  "instruct": "检查OBS存储桶 obs-condition-keys-0 的桶策略是否包含有效权限"
+}
