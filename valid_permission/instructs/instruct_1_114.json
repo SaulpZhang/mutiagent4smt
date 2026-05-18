@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "确认信任委托 46580f32-b731-4eae-9796-95012556feb2 的策略中授权条目是否有效"
+}

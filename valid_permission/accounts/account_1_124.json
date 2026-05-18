@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "v3_string_operation_without_z3_3",
+    "agency_id": "298ebf06-4ec9-4474-9e8a-8d311094676c",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"sts:agencies:assume\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringendwith\": {\"g:PrincipalOrgId\": [\"12A\"]}}}, {\"Effect\": \"Deny\", \"Action\": [\"sts:agencies:assume\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringmatch\": {\"g:PrincipalOrgId\": [\"*12A\", \"*12a\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

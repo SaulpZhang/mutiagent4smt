@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "string_3",
+    "agency_id": "e44d0edb-4d15-48cc-a533-c6b1c4611a66",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringmatchnot\": {\"g:EnterpriseProjectId\": [\"ab*\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

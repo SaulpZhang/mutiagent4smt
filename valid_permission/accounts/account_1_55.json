@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "bool_5",
+    "agency_id": "2e2d3b93-ae7a-4837-9a29-5dc79638fa27",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"bool\": {\"g:PrincipalIsRootUser\": [\"true\"]}, \"stringequals\": {\"g:PrincipalType\": [\"AssumedAgency\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

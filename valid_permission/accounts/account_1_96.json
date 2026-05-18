@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "principal_org_1",
+    "agency_id": "b296b051-b18c-4a26-b4ca-2b736f8862ae",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:PrincipalOrgId\": [\"233\"]}, \"stringmatch\": {\"g:PrincipalOrgPath\": [\"??3?\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

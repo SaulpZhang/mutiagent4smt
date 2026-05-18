@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "called_via_3",
+    "agency_id": "25ef8f37-fdf5-4ea4-a9c0-4c3a5b7290cc",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"forallvalues:stringmatch\": {\"g:CalledVia\": [\"12*\"]}, \"foranyvalue:stringequals\": {\"g:CalledViaFirst\": [\"123\"], \"g:CalledViaLast\": [\"121\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

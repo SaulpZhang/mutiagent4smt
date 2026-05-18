@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "request_tag_0",
+    "agency_id": "786c5b6a-e0c6-41d3-a962-80a19e21cf91",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"stringequals\": {\"g:RequestTag/name\": [\"233\"]}, \"forallvalues:stringequalsnot\": {\"g:TagKeys\": [\"name\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

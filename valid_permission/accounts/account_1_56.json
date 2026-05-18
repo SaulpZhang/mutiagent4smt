@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "bool_6",
+    "agency_id": "f8af4708-7fd3-41e3-98f7-92669aaebbda",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"*\"], \"Principal\": {\"IAM\": [\"*\"]}, \"Condition\": {\"null\": {\"g:RequestedRegion\": [\"true\"]}}}], \"Version\": \"5.0\"}"
+  }
+}

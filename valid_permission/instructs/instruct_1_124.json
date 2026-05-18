@@ -1,0 +1,5 @@
+{
+  "scenario": "valid_permission",
+  "sub_scenario": "agency_trust_policy",
+  "instruct": "Does the trust policy for agency 298ebf06-4ec9-4474-9e8a-8d311094676c contain any valid permissions"
+}

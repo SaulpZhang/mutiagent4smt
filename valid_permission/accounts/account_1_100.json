@@ -1,0 +1,9 @@
+{
+  "account_id": "0123456789abcdef0123456789abcdef",
+  "agencies": {
+    "agency_name": "regexp_union_check_0",
+    "agency_id": "dc49e28f-fb51-455a-b208-285b65d79818",
+    "attached_policy_ids": [],
+    "trust_policy": "{\"Statement\": [{\"Effect\": \"Allow\", \"Action\": [\"sts:agencies:assume\", \"obs:object:listBucket\"], \"Principal\": {\"IAM\": [\"account1\", \"account2\"]}, \"Condition\": {}}, {\"Effect\": \"Deny\", \"Action\": [\"sts:agencies:assume\"], \"Principal\": {\"IAM\": [\"account1\"]}, \"Condition\": {}}], \"Version\": \"5.0\"}"
+  }
+}

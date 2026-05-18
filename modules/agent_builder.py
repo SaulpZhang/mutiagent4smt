@@ -51,23 +51,13 @@ class AgentBuilder:
         from modules.tools.smt_tools import TOOL_DEFINITIONS
         from modules.tools.smt_tools import (
             tool_parse_iam_policy,
-            tool_smt_declare_variables,
-            tool_smt_assert_config,
-            tool_smt_validation_funcs,
-            tool_smt_contradiction_check,
-            tool_smt_allow_deny_combine,
-            tool_smt_assemble,
+            tool_smt_declare_and_assign,
             tool_smt_verify,
         )
 
         fn_map = {
             "parse_iam_policy": tool_parse_iam_policy,
-            "smt_declare_variables": tool_smt_declare_variables,
-            "smt_assert_config": tool_smt_assert_config,
-            "smt_validation_funcs": tool_smt_validation_funcs,
-            "smt_contradiction_check": tool_smt_contradiction_check,
-            "smt_allow_deny_combine": tool_smt_allow_deny_combine,
-            "smt_assemble": tool_smt_assemble,
+            "smt_declare_and_assign": tool_smt_declare_and_assign,
             "smt_verify": tool_smt_verify,
         }
 
