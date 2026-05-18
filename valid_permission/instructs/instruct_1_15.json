@@ -1,5 +1,0 @@
-{
-  "scenario": "valid_permission",
-  "sub_scenario": "bucket_policy",
-  "instruct": "Does the bucket policy bound to OBS bucket conflict-operator-and-condition-key-8 contain any valid authorization"
-}

@@ -1,5 +1,0 @@
-{
-  "scenario": "valid_permission",
-  "sub_scenario": "bucket_policy",
-  "instruct": "Check if there are effective access grants in the policy attached to bucket obs-date-operator-alias-0"
-}

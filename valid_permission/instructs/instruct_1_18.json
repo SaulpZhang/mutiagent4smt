@@ -1,5 +1,0 @@
-{
-  "scenario": "valid_permission",
-  "sub_scenario": "bucket_policy",
-  "instruct": "obs-condition-keys-2 桶的策略是否设置了有效的访问权限"
-}
