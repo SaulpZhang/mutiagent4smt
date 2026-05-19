@@ -389,6 +389,110 @@ def tool_build_smt_expr(op: str, operands: list[str]) -> str:
         return f"错误：build_smt_expr 生成失败 - {e}"
 
 
+# ── 工具 ⑥: check_condition_semantics ──
+
+def tool_check_condition_semantics(operator: str, condition_key: str, condition_value: str) -> str:
+    """检查IAM条件语义是否矛盾。
+
+    检测模式：
+    - bool + value="false" → 语义矛盾，必返回 "false"
+    - 其他模式可后续扩展
+
+    Args:
+        operator: IAM条件操作符
+        condition_key: IAM条件键
+        condition_value: 条件值（IAM 条件值数组的第一个元素）
+
+    Returns:
+        "false"（语义矛盾→放入 constraints→UNSAT）或 "true"（语义正常）
+    """
+    op_lower = operator.lower().strip()
+    val_lower = condition_value.lower().strip() if condition_value else ""
+
+    if op_lower == "bool" and val_lower == "false":
+        return "false"
+
+    return "true"
+
+
+# ── 工具 ⑦: build_condition_constraint ──
+
+def tool_build_condition_constraint(operator: str, condition_value: str, var_name: str = "v") -> str:
+    """生成条件值的 SMT 约束表达式。
+
+    将 IAM 条件的值约束编码为 SMT 表达式，使 Z3 能检测条件间的矛盾。
+    生成的表达式应放入 build_smt_model 的 constraints 数组。
+
+    不同操作符的编码方式：
+    - stringequals → (= v "value")
+    - stringnotequals → (not (= v "value"))
+    - numericequals → (= v 123)
+    - numericnotequals → (not (= v 123))
+    - numericgreaterthan → (> v 123)
+    - numericlessthan → (< v 123)
+    - numericgreaterthanequals → (>= v 123)
+    - numericlessthanequals → (<= v 123)
+    - bool → (= v true) 或 (= v false)
+    - null → (= v "")
+    - ipaddress, date* → 不编码（复杂语义）
+
+    Args:
+        operator: IAM条件操作符
+        condition_value: 条件值（字符串形式，如 "5"、"false"、"User"）
+        var_name: SMT 变量名，默认 "v"
+
+    Returns:
+        SMT 约束表达式字符串，如 "(= v \"User\")"、"(> v 5)"
+    """
+    op_lower = operator.lower().strip()
+    val = condition_value.strip()
+
+    if not val:
+        return "true"
+
+    # Bool
+    if op_lower == "bool":
+        if val.lower() == "true":
+            return f"(= {var_name} true)"
+        elif val.lower() == "false":
+            return f"(= {var_name} false)"
+
+    # String equality operators
+    if op_lower in {"stringequals", "stringequalsifexists"}:
+        return f'(= {var_name} "{val}")'
+
+    if op_lower in {"stringnotequals"}:
+        return f'(not (= {var_name} "{val}"))'
+
+    # Numeric operators
+    try:
+        int_val = int(val)
+        if op_lower in {"numericequals", "numericequalsnot"}:
+            return f"(= {var_name} {int_val})"
+        if op_lower in {"numericnotequals"}:
+            return f"(not (= {var_name} {int_val}))"
+        if op_lower == "numericgreaterthan":
+            return f"(> {var_name} {int_val})"
+        if op_lower == "numericlessthan":
+            return f"(< {var_name} {int_val})"
+        if op_lower == "numericgreaterthanequals":
+            return f"(>= {var_name} {int_val})"
+        if op_lower == "numericlessthanequals":
+            return f"(<= {var_name} {int_val})"
+    except (ValueError, TypeError):
+        pass
+
+    # Null operator
+    if op_lower == "null":
+        if val.lower() == "true":
+            return f"(= {var_name} \"\")"
+        elif val.lower() == "false":
+            return f'(not (= {var_name} ""))'
+
+    # Fallback: string equality
+    return f'(= {var_name} "{val}")'
+
+
 # ── 工具注册元数据 ──
 
 TOOL_DEFINITIONS = [
@@ -511,6 +615,50 @@ TOOL_DEFINITIONS = [
                 },
             },
             "required": ["op", "operands"],
+        },
+    },
+    {
+        "name": "check_condition_semantics",
+        "description": "检查IAM条件语义是否矛盾（如bool条件值为false）。返回false（语义矛盾→放入constraints→UNSAT）或true（语义正常）。注意：该工具一次只检查单个值（condition_value参数应为IAM值数组的第一个元素）。如果条件值数组同时包含\"true\"和\"false\"（如[\"true\",\"false\"]），两者覆盖所有可能性，不是矛盾。与check_type_compatibility不同：check_type_compatibility检查操作符与键的类型兼容性，此工具检查条件值的语义正确性。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "operator": {
+                    "type": "string",
+                    "description": "IAM条件操作符，如bool、stringequals、numericequals等",
+                },
+                "condition_key": {
+                    "type": "string",
+                    "description": "IAM条件键，如g:SecureTransport、g:MfaAge等",
+                },
+                "condition_value": {
+                    "type": "string",
+                    "description": "条件值（IAM配置中条件值数组的第一个元素），如false、5、User等",
+                },
+            },
+            "required": ["operator", "condition_key", "condition_value"],
+        },
+    },
+    {
+        "name": "build_condition_constraint",
+        "description": "生成条件值的SMT约束表达式。将IAM条件的值约束编码为SMT表达式（如(= v \"User\")、(> v 5)），使Z3能检测条件间的矛盾。生成的表达式应放入build_smt_model的constraints数组。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "operator": {
+                    "type": "string",
+                    "description": "IAM条件操作符，如stringequals、numericequals、numericgreaterthan、bool等",
+                },
+                "condition_value": {
+                    "type": "string",
+                    "description": "条件值字符串，如\"5\"、\"false\"、\"User\"、\"prefix*suffix\"",
+                },
+                "var_name": {
+                    "type": "string",
+                    "description": "SMT变量名，默认\"v\"。应与build_smt_model中声明的条件值变量名一致",
+                },
+            },
+            "required": ["operator", "condition_value"],
         },
     },
 ]

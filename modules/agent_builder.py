@@ -57,6 +57,8 @@ class AgentBuilder:
             tool_build_smt_expr,
             tool_check_type_compatibility,
             tool_build_type_check_smt,
+            tool_check_condition_semantics,
+            tool_build_condition_constraint,
         )
 
         fn_map = {
@@ -64,6 +66,8 @@ class AgentBuilder:
             "build_smt_expr": tool_build_smt_expr,
             "check_type_compatibility": tool_check_type_compatibility,
             "build_type_check_smt": tool_build_type_check_smt,
+            "check_condition_semantics": tool_check_condition_semantics,
+            "build_condition_constraint": tool_build_condition_constraint,
         }
 
         tools = [

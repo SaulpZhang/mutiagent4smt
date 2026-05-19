@@ -11,6 +11,8 @@
   N = Statement 索引（从 0 开始），M = Condition 索引（从 0 开始）
 - 示例：`s0_has_effect`, `s0_effect_value`, `s0_c0_op`, `s0_c0_key`
 - **同一变量名在不同工具调用间必须完全一致**
+- **所有变量必须在 `variables` 参数中声明后**，才能在 `assignments` 或 `constraints` 中使用
+- 未在 variables 中声明的变量出现在断言中 → Z3 报错 `unknown constant`
 
 ## 操作符类型分类
 
@@ -57,6 +59,8 @@ Condition 操作符为 `bool` 且值为 `"false"` 时（如 `"bool": {"g:SecureT
 - **必须将 "false" 放入 constraints 数组**，使模型 UNSAT
 - 处理方式与类型不兼容相同
 
+> **注意多值场景**：IAM 条件值数组是 OR 关系。当数组同时包含 `"true"` 和 `"false"`（如 `["true", "false"]`）时，条件覆盖所有可能性，**不是**语义矛盾。仅当数组只有 `"false"` 一个值时才应检测为矛盾。
+
 ### Condition 具体值编码要求
 
 每个 Condition 的值必须编码为 SMT 断言，不能只检查存在性和类型兼容性：
@@ -64,9 +68,22 @@ Condition 操作符为 `bool` 且值为 `"false"` 时（如 `"bool": {"g:SecureT
 - 将值的约束编码为 SMT 断言（如 `(= s0_c0_value "expected")`）
 - Condition 的约束必须纳入最终有效性判断
 
+### check_condition_semantics 工具
+
+对每条 Condition，先调用 `check_condition_semantics(operator, condition_key, value)`：
+- 返回 "false" → 该条件存在语义矛盾（如 bool:false），将 "false" 放入 constraints
+- 返回 "true" → 语义正常，继续编码值约束
+
+### build_condition_constraint 工具
+
+对每条 Condition 的值，调用 `build_condition_constraint(operator, value, var_name)`：
+- 生成条件值的 SMT 约束表达式
+- 将生成的表达式放入 build_smt_model 的 constraints
+
 ## 语义要点
 
 - Z3 的 (check-sat) 检查所有断言是否可同时满足
 - 类型不兼容或语义矛盾 → 必须通过 (assert false) 制造矛盾 → Z3 返回 UNSAT
-- Effect 值必须同时覆盖 Allow 和 Deny 两种可能性（C2）
+- **Effect 值必须同时覆盖 Allow 和 Deny 两种可能性（C2）**：必须使用 `(or (= sN_effect_value "Allow") (= sN_effect_value "Deny"))` 形式验证，不能只断言其中一个值
 - 每条 Condition 必须同时处理类型兼容性 AND 值的语义约束
+- **多个 Condition 之间可能存在矛盾**（如 `numericgreaterthan 5` + `numericlessthan 6` 无整数解），Z3 需要通过值约束自动检测这类矛盾
