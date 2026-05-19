@@ -64,6 +64,8 @@ build_smt_model(
 **变量命名一致性**：建议 `sN_has_X` (Bool)、`sN_X_value` (String)，N 从 0 开始。
 多次调用间同一变量名必须完全一致。
 
+**重要提醒**：必须通过调用 build_smt_model 工具输出最终 SMT 代码。不要自己拼接 SMT-LIB V2 字符串写在代码块中——手写 SMT 几乎必然导致语法错误（括号不匹配、引号未转义、常量未声明等），已被历史运行证明是最高频的失败原因。使用 build_smt_model 确保输出语法正确的 SMT-LIB V2。
+
 你必须遵守的规则如下：
 
 {{rules}}

@@ -397,6 +397,7 @@ def tool_check_condition_semantics(operator: str, condition_key: str, condition_
     检测模式：
     - bool + ["false"] → 语义矛盾，必返回 "false"
     - bool + ["true", "false"] → 同时包含true/false覆盖所有可能，不矛盾
+    - null + 非布尔值（不是 "true" 也不是 "false"）→ 语义矛盾，返回 "false"
     - 其他模式可后续扩展
 
     condition_value 参数接受 JSON 数组字符串，代表 IAM 条件值的完整数组。
@@ -428,6 +429,11 @@ def tool_check_condition_semantics(operator: str, condition_key: str, condition_
         val_lower = str(parsed).lower().strip() if parsed else ""
 
     if op_lower == "bool" and val_lower == "false":
+        return "false"
+
+    # null 操作符只接受布尔语义（true=键不存在，false=键存在）
+    # 非布尔值（如 "123"）与 null 操作符语义矛盾
+    if op_lower == "null" and val_lower not in ("true", "false", ""):
         return "false"
 
     return "true"
