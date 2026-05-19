@@ -1,0 +1,72 @@
+## 变量命名约定
+
+- 变量名由 LLM 自行指定，工具原样使用
+- 建议风格：
+  ```
+  sN_has_X       (Bool)   — X 的存在性
+  sN_X_value     (String) — X 的值
+  sN_cM_op       (String) — 第 N 个 Statement 第 M 个 Condition 的操作符
+  sN_cM_key      (String) — 第 N 个 Statement 第 M 个 Condition 的条件键
+  ```
+  N = Statement 索引（从 0 开始），M = Condition 索引（从 0 开始）
+- 示例：`s0_has_effect`, `s0_effect_value`, `s0_c0_op`, `s0_c0_key`
+- **同一变量名在不同工具调用间必须完全一致**
+
+## 操作符类型分类
+
+每种操作符映射到一个类型组，用于类型兼容性判定：
+
+| 类型组 | 操作符 |
+|--------|--------|
+| string | stringequals, stringnotequals, stringmatch, stringmatchnot, stringequalsignorecase, stringequalsnot, stringstartwith, stringendwith, stringlike, stringequalsifexists, stringmatchifexists |
+| numeric | numericequals, numericnotequals, numericgreaterthan, numericlessthan, numericgreaterthanequals, numericlessthanequals, numericequalsnot, numberinrange, numericgreaterthanifexists |
+| date | dateequals, datenotequals, dateless, dategreater, dategreaterorequals, datelessorequals, dategreaterthan, datelessthan, dategreaterthanequals, datelessthanequals, timeequals, timenotequals, timeless, timegreater |
+| bool | bool |
+| ip | ipaddress, ipaddressnot, ipaddressifexists |
+| null | null |
+
+Multi-value 操作符（如 `forallvalues:stringequals`、`foranyvalue:stringmatch`）：按冒号后的内层操作符分类。
+
+## 条件键类型分类
+
+每个条件键映射到一种类型：
+
+| 键类型 | 条件键 |
+|--------|--------|
+| string | g:PrincipalType, g:PrincipalAccount, g:PrincipalUrn, g:PrincipalOrgId, g:PrincipalOrgPath, g:EnterpriseProjectId, g:UserName, g:SourceIdentity, g:RequestedRegion, g:SourceVpc, g:UserAgent, g:Referer, g:CalledVia, g:CalledViaFirst, g:CalledViaLast, g:TagKeys, ServiceAgency |
+| numeric | g:MFAAge, g:MfaAge |
+| bool | g:MFAPresent, g:SecureTransport, g:PrincipalIsRootUser, g:ViaService, g:MfaPresent, g:mfaPresent |
+| date | g:CurrentTime, g:TokenIssueTime |
+| ip | g:SourceIp, g:VpcSourceIp |
+
+前缀匹配键（归为 string 类型）：`g:RequestTag/`、`g:PrincipalTag/`、`g:ResourceTag/` 开头的键。
+
+## Condition 编码规则
+
+### 类型兼容性检查（每条 Condition 必须执行）
+
+1. 先调用 `check_type_compatibility(operator, condition_key)` 获取兼容性结果
+2. 再调用 `build_type_check_smt(operator, condition_key, prefix)` 生成 define-fun SMT 代码
+3. 将生成的 define-fun 代码传入 `build_smt_model` 的 `define_funs_raw` 参数
+4. 如果 `check_type_compatibility` 返回 "false"，**同时**将 "false" 放入 `constraints` 数组
+
+### bool:false 语义矛盾
+
+Condition 操作符为 `bool` 且值为 `"false"` 时（如 `"bool": {"g:SecureTransport": ["false"]}`）：
+- 该条件在安全策略上下文中是语义矛盾
+- **必须将 "false" 放入 constraints 数组**，使模型 UNSAT
+- 处理方式与类型不兼容相同
+
+### Condition 具体值编码要求
+
+每个 Condition 的值必须编码为 SMT 断言，不能只检查存在性和类型兼容性：
+- 声明变量存储 Condition 的操作符、键和值
+- 将值的约束编码为 SMT 断言（如 `(= s0_c0_value "expected")`）
+- Condition 的约束必须纳入最终有效性判断
+
+## 语义要点
+
+- Z3 的 (check-sat) 检查所有断言是否可同时满足
+- 类型不兼容或语义矛盾 → 必须通过 (assert false) 制造矛盾 → Z3 返回 UNSAT
+- Effect 值必须同时覆盖 Allow 和 Deny 两种可能性（C2）
+- 每条 Condition 必须同时处理类型兼容性 AND 值的语义约束

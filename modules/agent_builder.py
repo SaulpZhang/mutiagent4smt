@@ -56,12 +56,14 @@ class AgentBuilder:
             tool_build_smt_model,
             tool_build_smt_expr,
             tool_check_type_compatibility,
+            tool_build_type_check_smt,
         )
 
         fn_map = {
             "build_smt_model": tool_build_smt_model,
             "build_smt_expr": tool_build_smt_expr,
             "check_type_compatibility": tool_check_type_compatibility,
+            "build_type_check_smt": tool_build_type_check_smt,
         }
 
         tools = [

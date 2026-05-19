@@ -112,6 +112,52 @@ def _extract_conditions(stmt: dict) -> list[tuple[str, str, str]]:
     return result
 
 
+# ── 类型分类共享逻辑 ──
+
+OP_CLASSES: dict[str, set[str]] = {
+    "string": STRING_OPS,
+    "numeric": NUMERIC_OPS,
+    "date": DATE_OPS,
+    "bool": BOOL_OPS,
+    "ip": IP_OPS,
+    "null": NULL_OPS,
+}
+
+KEY_CLASSIFIERS: list[tuple[str, set[str], tuple[str, ...]]] = [
+    ("string", STRING_KEYS, STRING_KEY_PREFIXES),
+    ("numeric", NUMERIC_KEYS, ()),
+    ("bool", BOOL_KEYS, ()),
+    ("date", DATE_KEYS, ()),
+    ("ip", IP_KEYS, ()),
+]
+
+
+def _classify_operator(operator: str) -> str | None:
+    """返回操作符的类型（string/numeric/date/bool/ip/null），无法分类返回 None。"""
+    op_lower = operator.lower().strip()
+    for cls_name, ops_set in OP_CLASSES.items():
+        if op_lower in ops_set:
+            return cls_name
+    # Multi-value: "forallvalues:stringequals" → inner="stringequals"
+    if ":" in op_lower:
+        inner = op_lower.split(":", 1)[1]
+        for cls_name, ops_set in OP_CLASSES.items():
+            if inner in ops_set:
+                return cls_name
+    return None
+
+
+def _classify_key(condition_key: str) -> str | None:
+    """返回条件键的类型（string/numeric/bool/date/ip），无法分类返回 None。"""
+    for cls_name, key_set, prefixes in KEY_CLASSIFIERS:
+        if condition_key in key_set:
+            return cls_name
+        for p in prefixes:
+            if condition_key.startswith(p):
+                return cls_name
+    return None
+
+
 # ── 工具 ①: parse_iam_policy ──
 
 def tool_parse_iam_policy(account_data: dict) -> str:
@@ -172,6 +218,7 @@ def tool_build_smt_model(
     assignments: list | None = None,
     constraints: list | None = None,
     define_funs: list | None = None,
+    define_funs_raw: str | None = None,
     check_sat: bool = True,
     exit_: bool = True,
 ) -> str:
@@ -180,6 +227,10 @@ def tool_build_smt_model(
     Python 处理所有格式细节（括号、引号、关键字），避免手写语法错误。
     当标准编译器不适用时，作为 execute_z3_python 的替代方案。
 
+    支持两种 define-fun 注入方式：
+    - define_funs: 结构化列表，自动构建 (define-fun ...) 语法
+    - define_funs_raw: 原始 SMT 代码字符串（如 build_type_check_smt 的输出），直接注入
+
     Args:
         variables: 变量声明，如 [{"name": "x", "sort": "Bool"}, {"name": "y", "sort": "String"}]
         assignments: 赋值断言，如 [{"var": "x", "type": "bool", "value": true}, {"var": "y", "type": "string", "value": "hello"}]
@@ -187,6 +238,7 @@ def tool_build_smt_model(
         constraints: 约束断言列表，每项为 SMT 表达式字符串，自动包装为 (assert ...)
             如 ["x", "(=> x y)", "(or x y)"]
         define_funs: 函数定义，如 [{"name": "f", "sort": "Bool", "body": "x"}]
+        define_funs_raw: 原始 define-fun SMT 代码（如 build_type_check_smt 的输出），直接注入
         check_sat: 是否添加 (check-sat)
         exit_: 是否添加 (exit)
 
@@ -215,6 +267,8 @@ def tool_build_smt_model(
         if define_funs:
             define_text = _build_define_funs(define_funs)
 
+        define_raw_text = define_funs_raw or ""
+
         # 合并 assertions
         all_assertions = []
         for t in [assign_text, constraint_text]:
@@ -226,6 +280,7 @@ def tool_build_smt_model(
             declarations=var_text,
             assertions=combined_assertions,
             define_funs=define_text,
+            define_funs_raw=define_raw_text,
             check_sat=check_sat,
             exit_=exit_,
         )
@@ -255,52 +310,64 @@ def tool_check_type_compatibility(operator: str, condition_key: str) -> str:
     Returns:
         "false"（类型不兼容→放入constraints→UNSAT）或 "true"（类型兼容）
     """
-    op_lower = operator.lower().strip()
+    op_type = _classify_operator(operator)
+    key_type = _classify_key(condition_key)
 
-    # ── 操作符分类（同IAMCompiler._classify_operator） ──
-    OP_CLASSES: dict[str, set[str]] = {
-        "string": STRING_OPS,
-        "numeric": NUMERIC_OPS,
-        "date": DATE_OPS,
-        "bool": BOOL_OPS,
-        "ip": IP_OPS,
-        "null": NULL_OPS,
-    }
-    op_type: str | None = None
-    for cls_name, ops_set in OP_CLASSES.items():
-        if op_lower in ops_set:
-            op_type = cls_name
-            break
-
-    # Multi-value operator: "forallvalues:stringequals" → inner="stringequals"
-    if op_type is None and ":" in op_lower:
-        inner = op_lower.split(":", 1)[1]
-        for cls_name, ops_set in OP_CLASSES.items():
-            if inner in ops_set:
-                op_type = cls_name
-                break
-
-    # ── 键分类（同IAMCompiler._classify_key） ──
-    key_type: str | None = None
-    for cls_name, key_set, prefixes in [
-        ("string", STRING_KEYS, STRING_KEY_PREFIXES),
-        ("numeric", NUMERIC_KEYS, ()),
-        ("bool", BOOL_KEYS, ()),
-        ("date", DATE_KEYS, ()),
-        ("ip", IP_KEYS, ()),
-    ]:
-        if condition_key in key_set:
-            key_type = cls_name
-            break
-        for p in prefixes:
-            if condition_key.startswith(p):
-                key_type = cls_name
-                break
-
-    # ── 判定不兼容 ──
     if op_type is not None and op_type != "null" and key_type is not None and op_type != key_type:
         return "false"
     return "true"
+
+
+# ── 工具 ④: build_type_check_smt ──
+
+def tool_build_type_check_smt(operator: str, condition_key: str, prefix: str = "type_ok") -> str:
+    """生成类型兼容性检查的 SMT-LIB V2 define-fun 代码片段。
+
+    生成三个 define-fun，显式编码操作符和条件键的类型分类：
+      {prefix}_op_type — 操作符的类型 (String)
+      {prefix}_key_type — 条件键的类型 (String)
+      {prefix} — 类型兼容性结果 (Bool)
+
+    评估器可以看到分类过程（如 op_type="string", key_type="string"），
+    而非"硬编码"的值。
+
+    生成的代码片段应传入 build_smt_model 的 define_funs 参数。
+
+    Args:
+        operator: IAM条件操作符
+        condition_key: IAM条件键
+        prefix: 变量名前缀，如 "s0_c0"、"s1_c0"
+
+    Returns:
+        SMT-LIB V2 define-fun 代码段（不含 declare-fun，define-fun 自带声明）
+    """
+    op_type = _classify_operator(operator)
+    key_type = _classify_key(condition_key)
+
+    # 若两者类型明确且不同 → 不兼容
+    is_incompatible = (
+        op_type is not None and op_type != "null"
+        and key_type is not None and op_type != key_type
+    )
+
+    if op_type is not None:
+        op_line = f'(define-fun {prefix}_op_type () String "{op_type}")'
+    else:
+        op_line = f"(define-fun {prefix}_op_type () String \"unknown\")"
+
+    if key_type is not None:
+        key_line = f'(define-fun {prefix}_key_type () String "{key_type}")'
+    else:
+        key_line = f"(define-fun {prefix}_key_type () String \"unknown\")"
+
+    if op_type is None or key_type is None:
+        # 无法分类 → 假设兼容
+        type_line = f"(define-fun {prefix} () Bool true)"
+    else:
+        # 显式类型比较
+        type_line = f"(define-fun {prefix} () Bool (= {prefix}_op_type {prefix}_key_type))"
+
+    return f"{op_line}\n{key_line}\n{type_line}"
 
 
 # ── 工具 ⑤: build_smt_expr ──
@@ -344,8 +411,30 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "build_type_check_smt",
+        "description": "生成类型兼容性检查的SMT-LIB V2代码片段（define-fun形式）。与check_type_compatibility不同：check_type_compatibility只返回true/false，build_type_check_smt返回显式编码操作符和键类型的SMT代码，评估器可以看到分类过程而非硬编码值。生成的SMT代码应传入build_smt_model的define_funs参数。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "operator": {
+                    "type": "string",
+                    "description": "IAM条件操作符，如numericequals、stringequals、dateequals、bool、ipaddress等",
+                },
+                "condition_key": {
+                    "type": "string",
+                    "description": "IAM条件键，如g:PrincipalAccount、g:SourceIp、g:CurrentTime等",
+                },
+                "prefix": {
+                    "type": "string",
+                    "description": "变量名前缀，如's0_c0'（Statement 0的Condition 0）。默认'type_ok'",
+                },
+            },
+            "required": ["operator", "condition_key"],
+        },
+    },
+    {
         "name": "build_smt_model",
-        "description": "从结构化JSON描述生成语法正确的完整SMT-LIB V2程序。Python处理格式（括号、引号、关键字），避免手写SMT语法错误。入参包括variables(变量声明)、assignments(赋值)、constraints(约束表达式列表)、define_funs(函数定义)。需要生成自定义SMT代码时使用。",
+        "description": "从结构化JSON描述生成语法正确的完整SMT-LIB V2程序。Python处理格式（括号、引号、关键字），避免手写SMT语法错误。入参包括variables(变量声明)、assignments(赋值)、constraints(约束表达式列表)、define_funs(结构化函数定义)、define_funs_raw(原始SMT define-fun代码如build_type_check_smt的输出)。需要生成自定义SMT代码时使用。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -379,7 +468,7 @@ TOOL_DEFINITIONS = [
                 },
                 "define_funs": {
                     "type": "array",
-                    "description": "函数定义列表，每项含 name(函数名)、sort(返回类型)、body(函数体表达式)",
+                    "description": "函数定义列表（结构化），每项含 name(函数名)、sort(返回类型)、body(函数体表达式)",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -388,6 +477,10 @@ TOOL_DEFINITIONS = [
                             "body": {"type": "string"},
                         },
                     },
+                },
+                "define_funs_raw": {
+                    "type": "string",
+                    "description": "原始 define-fun SMT 代码（如 build_type_check_smt 的输出），直接注入到程序的define-fun区域。适用于需要评估器看到分类逻辑的场景。与 define_funs 可同时使用。",
                 },
                 "check_sat": {
                     "type": "boolean",

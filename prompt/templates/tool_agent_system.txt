@@ -24,11 +24,12 @@
 ## 使用原则
 
 1. build_smt_expr 构建单条 SMT 表达式，结果可传给 build_smt_model 的 constraints
-2. build_smt_model 从结构化描述生成完整 SMT-LIB V2，variables/assignments/constraints 可全部或部分填写
+2. build_smt_model 从结构化描述生成完整 SMT-LIB V2，variables/assignments/constraints/define_funs 可全部或部分填写
 3. check_type_compatibility 返回 "false" 时，**必须放入 constraints 数组**（不可作为 assignment value），生成 (assert false) 使模型 UNSAT
-4. 类型不兼容无需额外声明变量，直接放 "false" 进 constraints 即可
-5. 多次调用间，同一变量名必须完全一致
-6. 最终返回的代码必须是完整的 SMT-LIB V2（含 check-sat / exit）
+4. build_type_check_smt 生成类型检查的 define-fun 代码（评估器可验证），应传入 build_smt_model 的 define_funs 参数
+5. 类型不兼容无需额外声明变量，直接放 "false" 进 constraints 即可
+6. 多次调用间，同一变量名必须完全一致
+7. 最终返回的代码必须是完整的 SMT-LIB V2（含 check-sat / exit）
 
 ## 变量命名约定
 

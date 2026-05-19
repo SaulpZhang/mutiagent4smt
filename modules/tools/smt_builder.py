@@ -169,17 +169,19 @@ def assemble_program(
     declarations: str = "",
     assertions: str = "",
     define_funs: str = "",
+    define_funs_raw: str = "",
     check_sat: bool = True,
     exit_: bool = True,
 ) -> str:
     """组装完整 SMT-LIB V2 程序。
 
-    顺序: declarations → define_funs → assertions → (check-sat) → (exit)
+    顺序: declarations → define_funs (structured) → define_funs_raw → assertions → (check-sat) → (exit)
 
     Args:
         declarations: variable declarations
         assertions: assertions
-        define_funs: function definitions
+        define_funs: function definitions (structured, from build_define_funs)
+        define_funs_raw: raw define-fun SMT code (from build_type_check_smt)
         check_sat: 是否添加 (check-sat)
         exit_: 是否添加 (exit)
 
@@ -187,7 +189,7 @@ def assemble_program(
         完整的 SMT-LIB V2 代码
     """
     parts = []
-    for p in [declarations, define_funs, assertions]:
+    for p in [declarations, define_funs, define_funs_raw, assertions]:
         stripped = p.strip()
         if stripped:
             parts.append(stripped)

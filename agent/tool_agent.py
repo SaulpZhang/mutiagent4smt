@@ -123,11 +123,14 @@ class ToolAgent(BaseAgent):
 
         # ── 初始消息 ──
         pm = PromptManager()
+        rules_path = pm.template_dir / "rule.txt"
+        rules_text = rules_path.read_text(encoding="utf-8") if rules_path.exists() else ""
         user_content = pm.load(
             "code_generation.txt",
             instruction=task,
             account_data=json.dumps(account_data, indent=2, ensure_ascii=False),
             constraints_list=constraints_json,
+            rules=rules_text,
         )
 
         messages = [

@@ -6,6 +6,7 @@
 - **build_smt_model**：从结构化描述生成完整 SMT-LIB V2（含 variables/assignments/constraints/define_funs）
 - **build_smt_expr**：构建单条 SMT 逻辑表达式（and/or/not/implies/eq/neq）
 - **check_type_compatibility**：检查IAM条件操作符与条件键的类型兼容性，返回 "false"（不兼容，使模型UNSAT）或 "true"（兼容）
+- **build_type_check_smt**：生成类型兼容性检查的 SMT-LIB V2 代码片段（define-fun形式），显式编码操作符和键的类型分类供评估器验证
 
 你可以自由组合多次调用。例如：
 1. 先调 check_type_compatibility 检查政策的 Condition 操作符与键是否类型兼容
@@ -31,6 +32,10 @@
 
 **变量命名一致性**：建议 `sN_has_X` (Bool)、`sN_X_value` (String)，N 从 0 开始。
 多次调用间同一变量名必须完全一致。
+
+你必须遵守的规则如下：
+
+{{rules}}
 
 验证指令：
 {{instruction}}
