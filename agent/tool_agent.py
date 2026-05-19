@@ -22,7 +22,7 @@ from langgraph.prebuilt import create_react_agent
 
 from agent.base import BaseAgent
 from agent.llm_client import LLMClient
-from core.schemas import SMTLibCode
+from core.schemas import EvaluationResult, SMTLibCode
 from prompt.manager import PromptManager
 
 _TEMPLATE_PATH = Path(__file__).parent.parent / "prompt" / "templates" / "tool_agent_system.txt"
@@ -82,6 +82,7 @@ class ToolAgent(BaseAgent):
         super().__init__(name, system_prompt, llm_client)
         self.tools = {t.name: t for t in tools}
         self.max_steps = max_steps
+        self._last_messages: list = []
 
     def _build_prompt(self, tools: list[ToolDef]) -> str:
         tool_lines = []
@@ -132,6 +133,22 @@ class ToolAgent(BaseAgent):
             constraints_list=constraints_json,
             rules=rules_text,
         )
+
+        # 有评估反馈 + 上一轮记录 → 注入再生反馈 prompt
+        if evaluation_feedback and self._last_messages:
+            feedback: EvaluationResult = evaluation_feedback
+            unsatisfied = [it for it in feedback.items if it.status == "not_satisfied"]
+            unsat_text = "\n".join(
+                f"  - {it.constraint_id}: {it.reason}" for it in unsatisfied
+            ) if unsatisfied else "  无（全部满足）"
+            feedback_prompt = pm.load(
+                "regeneration_feedback.txt",
+                previous_react_trace=_format_messages(self._last_messages, "上一轮 ReAct"),
+                satisfied_count=str(feedback.satisfied_count),
+                total_count=str(len(feedback.items)),
+                unsatisfied_details=unsat_text,
+            )
+            user_content = feedback_prompt + "\n\n" + user_content
 
         messages = [
             SystemMessage(content=self.system_prompt),
@@ -191,6 +208,7 @@ class ToolAgent(BaseAgent):
             code = "(check-sat)\n(exit)"
 
         print(f"  ── ReAct 结束 ({react_step} 步) ──")
+        self._last_messages = collected_messages
         return SMTLibCode(code=code)
 
     def _build_langchain_tools(self) -> list:
