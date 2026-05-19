@@ -1,31 +1,36 @@
-根据验证指令、IAM配置和约束列表生成Z3 Python代码，通过 execute_z3_python 工具执行并导出 SMT-LIB V2。
+根据验证指令、IAM配置和约束列表生成SMT-LIB V2代码。
 
-关于 Z3 Python 的编码规则、域知识（操作符-键类型、条件语义验证、多Statement建模等）已在系统提示词中完整定义，请直接遵循。
+你可以在 ReAct 循环中反复调用工具，逐步构建 SMT-LIB V2 代码。
 
-## 解析后的IAM配置（结构化数据，供代码中直接使用）
+可用工具：
+- **build_smt_model**：从结构化描述生成完整 SMT-LIB V2（含 variables/assignments/constraints/define_funs）
+- **build_smt_expr**：构建单条 SMT 逻辑表达式（and/or/not/implies/eq/neq）
+- **check_type_compatibility**：检查IAM条件操作符与条件键的类型兼容性，返回 "false"（不兼容，使模型UNSAT）或 "true"（兼容）
 
+你可以自由组合多次调用。例如：
+1. 先调 check_type_compatibility 检查政策的 Condition 操作符与键是否类型兼容
+2. 再调 build_smt_expr 构建复杂表达式
+3. 最后调 build_smt_model，把表达式和兼容性检查放进 constraints
+
+**类型兼容性检查**（关键）：对 IAM 配置中的每条 Condition：
+1. 先调 `check_type_compatibility(operator, condition_key)` 检查类型
+2. 如果返回 `"false"`（类型不兼容），**直接将 `"false"` 放入 build_smt_model 的 constraints 数组**，不可作为 assignment 的 value
+3. constraints 中的 `"false"` 会被自动包装为 `(assert false)` → 整个模型 UNSAT
+
+✅ 正确用法（constraints 数组）：
 ```json
-{{parsed_policy}}
+"constraints": ["false", "(= c7_valid ...)"]
 ```
 
-## 生成步骤
+❌ 错误用法（assignment value）：
+```json
+"assignments": [{"var": "type_ok", "value": "false"}]
+```
 
-### 第一步：分析
-1. 验证指令的核心目标是什么？
-2. IAM配置有几个Statement？每个Statement的Effect/Action/Principal/Condition？
-3. 约束列表中每个约束对应什么逻辑？
+**语义要点**：Z3 的 `(check-sat)` 检查所有断言是否可同时满足。类型不兼容意味着策略永不可满足 → 必须通过 `(assert false)` 制造矛盾 → Z3 返回 UNSAT。
 
-### 第二步：编写Z3 Python代码
-1. 导入：`from z3 import *; solver = Solver()`
-2. 为每个字段声明变量并断言实际值
-3. 定义辅助函数（操作符/键分类、条件兼容性等）
-4. 定义验证逻辑（有效值集合、条件矛盾检测）
-5. 组合整体有效性 → `solver.add(policy_valid)`
-6. 调用 `execute_z3_python(code=...)` 工具
-
-### 第三步：检查执行结果
-- 成功 → 返回标准 SMT-LIB V2 代码
-- 失败 → 修正后重新执行
+**变量命名一致性**：建议 `sN_has_X` (Bool)、`sN_X_value` (String)，N 从 0 开始。
+多次调用间同一变量名必须完全一致。
 
 验证指令：
 {{instruction}}

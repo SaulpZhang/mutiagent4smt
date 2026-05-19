@@ -8,10 +8,10 @@ from modules.agents.eval_agent import EvaluationAgent
 
 
 class AgentBuilder:
-    """Agent装配器：创建并配置三个Agent
+    """Agent装配器：创建并配置所有Agent
 
     Agent 1: 意图理解 - 分析验证指令，生成约束列表
-    Agent 2: 代码生成 - ToolAgent，通过 ReAct + 工具调用生成 SMT 代码
+    Agent 2: 代码生成 - ToolAgent，LLM 自主选择编译器或 Z3 Python 生成 SMT 代码
     Agent 3: 评估 - 逐项评估代码是否满足约束
     """
 
@@ -32,6 +32,16 @@ class AgentBuilder:
         actual_model = model_name or settings.common_model or settings.model_name
         return LLMClient(model_name=actual_model)
 
+    def _build_client_no_thinking(self, model_name: str) -> LLMClient:
+        """构建不带 thinking 模式的客户端（用于 ToolAgent ReAct 循环，
+        DeepSeek thinking 模式要求回传 reasoning_content，与 LangGraph ReAct 不兼容）"""
+        actual_model = model_name or settings.common_model or settings.model_name
+        return LLMClient(
+            model_name=actual_model,
+            thinking=False,
+            reasoning_effort="",
+        )
+
     def build_intent_agent(self) -> IntentUnderstandingAgent:
         return IntentUnderstandingAgent(
             name="intent_understanding",
@@ -39,24 +49,19 @@ class AgentBuilder:
             llm_client=self._build_client(settings.agent_1_model),
         )
 
-    def build_eval_agent(self) -> EvaluationAgent:
-        return EvaluationAgent(
-            name="evaluation",
-            system_prompt=self.SYSTEM_PROMPTS["eval"],
-            llm_client=self._build_client(settings.agent_3_model),
-        )
-
     def build_tool_code_gen_agent(self) -> ToolAgent:
-        """构建 ToolAgent：通过 ReAct + 工具调用生成 SMT 代码"""
+        """构建 ToolAgent：LLM 自主选择 SMT 生成工具"""
         from modules.tools.smt_tools import TOOL_DEFINITIONS
         from modules.tools.smt_tools import (
-            tool_parse_iam_policy,
-            tool_execute_z3_python,
+            tool_build_smt_model,
+            tool_build_smt_expr,
+            tool_check_type_compatibility,
         )
 
         fn_map = {
-            "parse_iam_policy": tool_parse_iam_policy,
-            "execute_z3_python": tool_execute_z3_python,
+            "build_smt_model": tool_build_smt_model,
+            "build_smt_expr": tool_build_smt_expr,
+            "check_type_compatibility": tool_check_type_compatibility,
         }
 
         tools = [
@@ -71,6 +76,14 @@ class AgentBuilder:
 
         return ToolAgent(
             name="code_gen_tools",
-            llm_client=self._build_client(settings.agent_2_model),
+            llm_client=self._build_client_no_thinking(settings.agent_2_model),
             tools=tools,
+            max_steps=20,
+        )
+
+    def build_eval_agent(self) -> EvaluationAgent:
+        return EvaluationAgent(
+            name="evaluation",
+            system_prompt=self.SYSTEM_PROMPTS["eval"],
+            llm_client=self._build_client(settings.agent_3_model),
         )

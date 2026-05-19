@@ -4,8 +4,10 @@
 通过 LangGraph 的 ReAct 循环自动调度工具调用。
 
 核心工具：
-1. execute_z3_python — 执行 Z3 Python 代码并导出 SMT-LIB V2（由 LLM 调用）
-parse_iam_policy 自动执行，不绑给 LLM。
+1. compile_iam_policy — 确定性 IAM→SMT 编译器（由 LLM 自主调用）
+2. execute_z3_python — 执行 Z3 Python 代码并导出 SMT-LIB V2（由 LLM 调用）
+
+LLM 自主判断使用哪个工具。
 """
 
 from __future__ import annotations
@@ -82,23 +84,16 @@ class ToolAgent(BaseAgent):
         self.max_steps = max_steps
 
     def _build_prompt(self, tools: list[ToolDef]) -> str:
-        skip_names = {"parse_iam_policy"}
         tool_lines = []
         for t in tools:
-            if t.name in skip_names:
-                continue
             props = t.parameters.get("properties", {})
             param_str = ", ".join(f"{n}({p.get('type','?')})" for n, p in props.items())
             tool_lines.append(f"- **{t.name}({param_str})**: {t.description}")
         tool_descriptions = "\n".join(tool_lines)
 
         flow_steps = []
-        step_num = 1
-        for t in tools:
-            if t.name in skip_names:
-                continue
-            flow_steps.append(f"{step_num}. {t.name}")
-            step_num += 1
+        for i, t in enumerate(tools, 1):
+            flow_steps.append(f"{i}. {t.name}")
         recommended_flow = "\n".join(flow_steps)
 
         template = _TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -110,11 +105,8 @@ class ToolAgent(BaseAgent):
         task = kwargs.get("prompt", "")
         constraints_json = kwargs.get("constraints_json", "")
         account_data = kwargs.get("account_data", {})
+        evaluation_feedback = kwargs.get("evaluation_feedback", None)
         trace_logger = kwargs.get("trace_logger", None)
-
-        # ── 自动解析 policy（结果注入 prompt 供 LLM 参考） ──
-        print("  [ToolAgent] 自动执行: parse_iam_policy")
-        parsed_policy = tool_parse_iam_policy(account_data)
 
         # ── 构建 LangChain Tools ──
         lc_tools = self._build_langchain_tools()
@@ -136,7 +128,6 @@ class ToolAgent(BaseAgent):
             instruction=task,
             account_data=json.dumps(account_data, indent=2, ensure_ascii=False),
             constraints_list=constraints_json,
-            parsed_policy=parsed_policy,
         )
 
         messages = [
@@ -187,7 +178,7 @@ class ToolAgent(BaseAgent):
                             trace_logger.log_react_message(react_step, f"tool_{msg.name}", c)
             react_step += 1
 
-        # ── 从 execute_z3_python 工具结果中提取最终 SMT 代码 ──
+        # ── 从工具结果中提取最终 SMT 代码 ──
         code = self._extract_final_code(collected_messages)
 
         if code and not code.startswith("错误"):
@@ -200,18 +191,8 @@ class ToolAgent(BaseAgent):
         return SMTLibCode(code=code)
 
     def _build_langchain_tools(self) -> list:
-        """将 ToolDef 列表转为 LangChain StructuredTool 列表。
-
-        parse_iam_policy 已自动执行，不绑定给 LLM。
-        """
-        lc_tools = []
-
-        for td in self.tools.values():
-            if td.name == "parse_iam_policy":
-                continue  # 已自动执行
-            lc_tools.append(self._make_gen_tool(td))
-
-        return lc_tools
+        """将 ToolDef 列表转为 LangChain StructuredTool 列表。"""
+        return [self._make_gen_tool(td) for td in self.tools.values()]
 
     def _make_gen_tool(self, td: ToolDef) -> StructuredTool:
         """通用工具包装器。"""
@@ -232,17 +213,19 @@ class ToolAgent(BaseAgent):
     def _extract_final_code(self, messages: list) -> str:
         """从消息历史中提取最终的 SMT 代码。
 
-        优先取 execute_z3_python 工具的成功输出（从最新往前找第一个成功），
+        优先取 build_smt_model 工具的成功输出，
         其次回退到 LLM 文本中的代码块。
         """
         import re
 
-        # 优先：从最新往前找第一个成功的 execute_z3_python 结果
+        # 优先：从最新往前找第一个成功的工具结果
         for msg in reversed(messages):
-            if hasattr(msg, "name") and getattr(msg, "name", "") == "execute_z3_python":
-                content = msg.content.strip() if msg.content else ""
-                if content and not content.startswith("错误") and not content.startswith("执行错误"):
-                    return content
+            if hasattr(msg, "name"):
+                name = getattr(msg, "name", "")
+                if name == "build_smt_model":
+                    content = msg.content.strip() if msg.content else ""
+                    if content and not content.startswith("错误"):
+                        return content
 
         # 回退：从 LLM 文本中提取代码块
         for msg in reversed(messages):
@@ -256,10 +239,3 @@ class ToolAgent(BaseAgent):
 
     def _chat(self, user_message: str, json_output: bool = False) -> str:
         raise NotImplementedError("ToolAgent uses LangGraph ReAct loop")
-
-
-# ── 延迟导入以避免循环依赖 ──
-
-def tool_parse_iam_policy(account_data: dict) -> str:
-    from modules.tools.smt_tools import tool_parse_iam_policy as _fn
-    return _fn(account_data)

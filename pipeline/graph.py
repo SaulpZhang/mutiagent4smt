@@ -2,29 +2,14 @@ from __future__ import annotations
 
 """LangGraph StateGraph 流水线（单用例处理）
 
-Agent 2 使用 ToolAgent（ReAct 模式），通过 smt_verify 自检语法，
-无需外部语法修正节点。
+Agent 2 (ToolAgent) 通过 ReAct 循环自主选择工具生成 SMT 代码。
+当语义评估不通过时，自动进入修正循环（带评估反馈重新生成）。
 
 流程:
-   intent_agent → code_gen (ToolAgent ReAct)
-                        │
-                        ▼
-                    evaluate
-                        │
-                ┌───────┴───────┐
-                │ 全部满足         │ 存在不满足(未达上限)
-                ▼                 ▼
-             output          semantic_fix (ToolAgent 再次生成)
-                │                 │
-                ▼                 ▼
-             verify          evaluate (loop)
-
-说明：
-- 本图处理单个用例，所有用例的遍历在 main.py 中完成
-- 每个用例独立创建一个 PipelineState 实例
+   intent_agent → code_gen (ToolAgent) → evaluate
+       ↕ (evaluation_feedback loop, max_iterations 次)
+       └── output → verify
 """
-
-from typing import Literal
 
 from langgraph.graph import END, StateGraph
 
@@ -32,27 +17,19 @@ from pipeline.nodes import PipelineNodes
 from pipeline.state import PipelineState
 
 
-def decide_evaluation_route(state: PipelineState) -> Literal["semantic_fix", "output"]:
-    """评估后的路由
-
-    - 全部满足 → output
-    - 存在不满足且未达上限 → semantic_fix
-    - 存在不满足且达上限 → output
-    """
+def decide_evaluation_route(state: PipelineState) -> str:
+    """评估路由决策：评估未通过且未超限则重试，否则输出"""
     evaluation = state.get("evaluation_result")
-    if evaluation is None:
-        return "output"
-
-    if evaluation.all_satisfied:
-        return "output"
-
     iteration = state.get("iteration", 0)
-    max_iter = state.get("max_iterations", 10)
+    max_iterations = state.get("max_iterations", 3)
 
-    if iteration >= max_iter:
+    if state.get("error_message"):
         return "output"
 
-    return "semantic_fix"
+    if evaluation and not evaluation.all_satisfied and iteration < max_iterations:
+        return "code_gen"  # 带评估反馈重新生成
+
+    return "output"
 
 
 def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
@@ -64,7 +41,6 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> State
     # 注册所有节点
     workflow.add_node("intent_agent", nodes.intent_agent_node)
     workflow.add_node("code_gen", nodes.code_gen_node)
-    workflow.add_node("semantic_fix", nodes.code_gen_node)
     workflow.add_node("evaluate", nodes.evaluate_node)
     workflow.add_node("output", nodes.output_node)
     workflow.add_node("verify", nodes.verify_node)
@@ -72,29 +48,15 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> State
     # 设置入口
     workflow.set_entry_point("intent_agent")
 
-    # intent_agent → code_gen (ToolAgent ReAct 生成)
+    # 流水线
     workflow.add_edge("intent_agent", "code_gen")
-
-    # code_gen → evaluate（跳过语法检查，ToolAgent 已用 smt_verify 自检）
     workflow.add_edge("code_gen", "evaluate")
-
-    # evaluate → 条件路由
     workflow.add_conditional_edges(
         "evaluate",
         decide_evaluation_route,
-        {
-            "semantic_fix": "semantic_fix",
-            "output": "output",
-        },
+        {"code_gen": "code_gen", "output": "output"},
     )
-
-    # semantic_fix → evaluate（ToolAgent 再次生成后直接评估）
-    workflow.add_edge("semantic_fix", "evaluate")
-
-    # output → verify
     workflow.add_edge("output", "verify")
-
-    # verify → 结束
     workflow.add_edge("verify", END)
 
     return workflow

@@ -108,6 +108,8 @@ class LLMClient:
             kwargs["reasoning_effort"] = self.reasoning_effort
         if self.thinking:
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        elif self.thinking is not None and not self.thinking:
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
 
         # 传递共享httpx异步客户端（类级复用，避免连接泄漏）
         kwargs["http_async_client"] = self._get_shared_async_client()

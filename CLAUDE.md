@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-多LLM智能体集成系统，用于自动化IAM策略的形式化验证。通过3-Agent协作流水线生成SMT-LIB V2代码，使用Z3求解器验证云IAM策略中的权限配置。
+多LLM智能体集成系统，用于自动化IAM策略的形式化验证。LLM 负责自然语言理解和语义评估，**确定性 IAM→SMT 编译器** 负责代码生成，使用 Z3 求解器验证云IAM策略中的权限配置。
 
 ## 运行环境
 
@@ -18,8 +18,6 @@ conda activate AI_Normal
 python main.py run --attempts 1                         # 全量实验（126个用例）
 python main.py run --attempts 1 --runid my_id            # 指定实验ID
 python main.py run --attempts 5                          # 5次尝试计算PASS@K
-python main.py run --gen-mode 0                         # 纯LLM模式（无Generator）
-python main.py run --gen-mode 2                         # LLM-Managed Generator模式
 python main.py run --from 1 --to 10                     # 运行用例1-10（左开右闭）
 python main.py run --index 1                            # 只运行第1个用例
 python main.py stats                                    # 查看实验结果统计
@@ -69,15 +67,15 @@ codev1/
 │       ├── syntax_fix.txt
 │       └── evaluation.txt
 ├── modules/
+│   ├── compiler/              # ★ 确定性 IAM→SMT 编译器
+│   │   ├── __init__.py        #     编译包
+│   │   └── iam_compiler.py    #     核心编译器
 │   ├── input_module.py        # 加载+配对指令和配置
-│   ├── generation_module.py   # Agent1(意图) + Agent2(代码生成)
+│   ├── generation_module.py   # Agent1(意图) + IAMCompiler(代码生成)
 │   ├── evaluation_module.py   # Agent3(语义评估)
 │   ├── output_module.py       # 输出SMT文件
 │   ├── verification_module.py # Z3语法检查+执行
-│   ├── agent_builder.py       # 装配3个Agent
-│   └── generators/            # 程序化SMT生成器
-│       ├── base.py            # SMTGenerator + GeneratorRegistry
-│       └── builtin_valid_permission.py  # ValidPermissionGenerator
+│   └── agent_builder.py       # 装配 Agent1 + Agent3（Agent2已替换为编译器）
 ├── pipeline/
 │   ├── state.py               # PipelineState TypedDict
 │   ├── graph.py               # LangGraph StateGraph 定义
@@ -110,32 +108,16 @@ main.py run
             │
             ▼
        intent_agent (Agent 1 ─ LLM)
-        分析指令+配置 → ConstraintsList
+        分析指令+配置 → ConstraintsList（供评估用）
             │
             ▼
-       code_gen (Agent 2)
-        ┌─ 首次生成:
-        │   GeneratorRegistry.find(instruction)?
-        │   ├─ 匹配 → ValidPermissionGenerator.generate() (程序化)
-        │   └─ 不匹配 → LLM code_gen_agent.run() (LLM)
-        │
-        ├─ 语义修正(iteration>0, 评估未通过):
-        │   LLM根据evaluation_feedback修正
-        │
-        └─ 重新生成(syntax重试达上限):
-            LLM从头重新生成
-            │
-            ▼
-       syntax_check (Z3 check-syntax)
-        ├─ 通过 → evaluate
-        ├─ 不满足(≤5次) → syntax_fix循环
-        └─ 不满足(>5次) → regenerate(≤2次) 或 output
+       code_gen (IAMCompiler ─ 确定性)
+        IAM JSON → Z3 Python 模型 → solver.to_smt2() → SMT-LIB V2
+        编译期检查：操作符/键类型兼容、bool:false 矛盾、tag 键前缀
             │
             ▼
        evaluate (Agent 3 ─ LLM)
-        逐项检查约束是否满足
-        ├─ 全部满足 → output
-        └─ 不满足(≤3次) → semantic_fix循环
+        逐项检查 SMT 代码是否满足约束列表
             │
             ▼
        output → verify (Z3 check-sat)
@@ -144,50 +126,34 @@ main.py run
        记录到DB + 计算label_match
 ```
 
-### GeneratorRegistry 匹配逻辑
-
-`ValidPermissionGenerator.can_handle(instruction)`:
-1. **关键词匹配**：检查 instruction 是否包含 `"有效授权"`, `"effective authorization"`, `"是否存在有效"` 等15个关键词
-2. **正则兜底**：正反两种语序匹配 `(验证桶|trust policy).*(是否有效|valid)` 和反向模式
-
-匹配率：126个用例中匹配125个，仅1个走LLM。
+**关键变化**：
+- Agent 2 (代码生成) 已替换为确定性 `IAMCompiler`
+- 无语义修正循环（编译器一次性生成正确代码）
+- 无语法修正循环（编译器不会产生语法错误）
+- 线性流水线：intent → compile → evaluate → output → verify
 
 ### 关键超参数（config.py）
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| max_iterations | 3 | 语义修正循环上限 |
-| max_syntax_retries | 5 | 语法修正循环上限 |
 | llm_temperature | 0.1 | LLM温度 |
 | llm_request_timeout | 120s | LLM请求超时 |
 | case_timeout | 600s | 单用例超时（hard coded in main.py） |
 
-### SMT代码生成模式（--gen-mode）
+### IAMCompiler 设计要点
 
-| 模式 | 值 | 说明 | 适用场景 |
-|------|-----|------|----------|
-| 纯LLM | 0 | 完全由LLM生成SMT代码，不使用任何生成器 | LLM代码生成能力baseline测试 |
-| Generator+LLM | 1 | 优先匹配内置生成器（ValidPermissionGenerator），匹配失败走LLM | 当前默认模式（PASS@1≈96%） |
-| LLM-Managed | 2 | 通过LLM分发到 user_defined/ 目录下的用户自定义生成器 | 扩展实验：LLM逐步创建/改进生成器 |
+`modules/compiler/iam_compiler.py` 是确定性编译器，无LLM参与：
 
-### 用户自定义生成器（gen_mode=2）
-
-存储在 `modules/generators/user_defined/` 目录：
-```
-user_defined/
-├── index.json                    # 生成器注册索引
-├── generators/{name}/
-│   ├── spec.json                 # 生成器说明（name/version/description/input/output）
-│   └── generator.py              # Python实现（定义 generate() 函数）
-└── ...
-```
-
-**工作流**：
-1. 首次生成时，LLM根据验证指令判断是否有匹配的用户自定义生成器
-2. 有匹配 → 动态加载并执行 generator.py 的 generate() 函数
-3. 无匹配或执行失败 → 回退到 LLM 生成
-
-初始状态为空，生成器由LLM随着实验推进逐步创建和改进。
+| 特性 | 实现方式 |
+|------|----------|
+| IAM解析 | Python json.loads，支持 bucket_policy / trust_policy |
+| Effect建模 | Bool + String 变量，断言实际值与有效性 |
+| Action/Principal | 存在性检查 |
+| 条件类型兼容 | **编译期** Python 级别检查（operator lowercased + key prefix matching） |
+| Tag键前缀 | `key.startswith("g:RequestTag/")` 等编译期匹配 |
+| bool:false | 编译期直接添加 `BoolVal(False)` |
+| 多Statement组合 | Allow+Deny → `And(Or(allow), Not(Or(deny)))` |
+| SMT导出 | `solver.to_smt2()` + `(exit)` |
 
 ## 基础设施注意事项
 
@@ -212,7 +178,7 @@ user_defined/
 
 每次运行实验，必须在 `data/实验记录.log` 中追加：
 ```
-[run_id] | 时间 | prompt类型 | 模型 | 并行数 | 尝试次数 | gen_mode
+[run_id] | 时间 | 方案 | 模型 | 尝试次数
 ```
 
 ### 已完成实验汇总

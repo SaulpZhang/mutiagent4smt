@@ -21,18 +21,16 @@ class PipelineNodes:
         self._modules: dict[str, Any] = {}
         self.run_id = run_id
 
-        # 初始化所有依赖
         prompt_manager = PromptManager(prompt_type=prompt_type)
         agent_builder = AgentBuilder()
         verification_module = VerificationModule()
 
-        # 构建 ToolAgent（ReAct 模式，始终使用 gen_mode=2 路径）
+        # Agent 2: ToolAgent（LLM 自主选择编译器或 Z3 Python）
         tool_agent = agent_builder.build_tool_code_gen_agent()
 
         self._modules["generation"] = GenerationModule(
             intent_agent=agent_builder.build_intent_agent(),
             prompt_manager=prompt_manager,
-            verification_module=verification_module,
             tool_agent=tool_agent,
         )
         self._modules["evaluation"] = EvaluationModule(
@@ -49,7 +47,6 @@ class PipelineNodes:
         return m
 
     def _make_logger(self, state: dict) -> TraceLogger | None:
-        """从state创建用例级日志记录器"""
         instruct_id = state.get("instruct_id", "unknown")
         run_id = self.run_id
         attempt = state.get("extras", {}).get("attempt", 1)
@@ -72,7 +69,7 @@ class PipelineNodes:
             return {"extras": extras, "error_message": f"意图理解失败: {e}"}
 
     async def code_gen_node(self, state: dict) -> dict:
-        """智能体二：ToolAgent 代码生成（ReAct 模式，自检语法）"""
+        """智能体二：ToolAgent 代码生成（ReAct 模式，LLM 自主选择工具）"""
         if state.get("error_message"):
             return {}
 
@@ -81,9 +78,7 @@ class PipelineNodes:
         constraints = state.get("constraints_list")
         evaluation = state.get("evaluation_result")
         iteration = state.get("iteration", 0)
-        current_code: SMTLibCode | None = state.get("smt_code")
         trace_logger = self._make_logger(state)
-        # 存入 extras 供其他节点复用
         extras = dict(state.get("extras", {}))
         extras["trace_logger"] = trace_logger
 
@@ -91,11 +86,6 @@ class PipelineNodes:
             return {"error_message": "缺少输入数据或约束列表"}
 
         try:
-            extra_hint = ""
-            if state.get("regeneration_count", 0) > 0:
-                # 用于重新生成（目前不会触发，保留兼容）
-                pass
-
             if iteration > 0 and evaluation:
                 result = await gen_module.run_code_generation(
                     input_data, constraints,

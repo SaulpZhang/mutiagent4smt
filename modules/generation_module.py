@@ -10,7 +10,6 @@ from core.schemas import (
 )
 from core.trace_logger import TraceLogger
 from prompt.manager import PromptManager
-from modules.verification_module import VerificationModule
 
 
 class GenerationModule:
@@ -19,18 +18,19 @@ class GenerationModule:
     职责：
     1. Agent 1: 分析指令和IAM配置，生成约束列表
     2. Agent 2: ToolAgent — 通过 ReAct 模式 + 工具调用生成 SMT 代码
+       - 内置 compile_iam_policy 工具（确定性编译器，优先使用）
+       - 内置 execute_z3_python 工具（LLM 编写 Z3 Python，备用）
+       - LLM 自主判断使用哪个工具
     """
 
     def __init__(
         self,
         intent_agent: BaseAgent,
         prompt_manager: PromptManager,
-        verification_module: VerificationModule,
         tool_agent: ToolAgent | None = None,
     ) -> None:
         self.intent_agent = intent_agent
         self.prompt_manager = prompt_manager
-        self.verification_module = verification_module
         self.tool_agent = tool_agent
 
     async def run_intent_analysis(
@@ -53,15 +53,15 @@ class GenerationModule:
         evaluation_feedback: EvaluationResult | None = None,
         trace_logger: TraceLogger | None = None,
         iteration: int = 1,
-        extra_hint: str = "",
     ) -> SMTLibCode:
         """运行智能体二：通过 ToolAgent ReAct 模式生成 SMT 代码
 
-        支持首次生成和语义修正（通过 evaluation_feedback 传入前次评估结果）。
-        ToolAgent 在 ReAct 循环内使用 smt_verify 自检语法，不依赖外部语法修正节点。
+        ToolAgent 在 ReAct 循环内自主选择工具：
+        - compile_iam_policy → 确定性编译器（优先）
+        - execute_z3_python → LLM 编写 Z3 Python（备用）
         """
         if self.tool_agent is None:
-            raise RuntimeError("gen_mode=2 需要 ToolAgent，但未构建")
+            raise RuntimeError("GenerationModule 需要 ToolAgent，但未构建")
 
         prompt_text = (
             f"验证指令：{input_data.instruction}\n\n"
@@ -71,13 +71,12 @@ class GenerationModule:
 
         if evaluation_feedback:
             prompt_text += f"\n\n## 前次评估反馈（语义修正）\n{evaluation_feedback.model_dump_json()}"
-        if extra_hint:
-            prompt_text += f"\n\n{extra_hint}"
 
         result = await self.tool_agent.run(
             prompt=prompt_text,
             constraints_json=constraints_json,
             account_data=input_data.account_data,
+            evaluation_feedback=evaluation_feedback,
             trace_logger=trace_logger,
         )
         if trace_logger:
