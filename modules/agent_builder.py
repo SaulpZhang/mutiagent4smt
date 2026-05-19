@@ -32,12 +32,13 @@ class AgentBuilder:
         actual_model = model_name or settings.common_model or settings.model_name
         return LLMClient(model_name=actual_model)
 
-    def _build_client_no_thinking(self, model_name: str) -> LLMClient:
+    def _build_client_no_thinking(self, model_name: str, temperature: float | None = None) -> LLMClient:
         """构建不带 thinking 模式的客户端（用于 ToolAgent ReAct 循环，
         DeepSeek thinking 模式要求回传 reasoning_content，与 LangGraph ReAct 不兼容）"""
         actual_model = model_name or settings.common_model or settings.model_name
         return LLMClient(
             model_name=actual_model,
+            temperature=temperature,
             thinking=False,
             reasoning_effort="",
         )
@@ -82,7 +83,7 @@ class AgentBuilder:
 
         return ToolAgent(
             name="code_gen_tools",
-            llm_client=self._build_client_no_thinking(settings.agent_2_model),
+            llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.0),
             tools=tools,
             max_steps=20,
         )
