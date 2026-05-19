@@ -456,27 +456,17 @@ def tool_build_condition_constraint(operator: str, condition_value: str, var_nam
 
     Args:
         operator: IAM条件操作符
-        condition_value: 条件值（支持纯值或JSON数组格式，如 "5"、'["5"]'）
+        condition_value: 条件值（字符串形式，如 "5"、"false"、"User"）
         var_name: SMT 变量名，默认 "v"
 
     Returns:
         SMT 约束表达式字符串，如 "(= v \"User\")"、"(> v 5)"
     """
     op_lower = operator.lower().strip()
-    raw = condition_value.strip()
+    val = condition_value.strip()
 
-    if not raw:
+    if not val:
         return "true"
-
-    # 兼容 JSON 数组输入（如 '["2"]' → "2"、'["true","false"]' → "true"）
-    try:
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            val = str(parsed[0]).strip() if parsed else ""
-        else:
-            val = str(parsed).strip()
-    except (json.JSONDecodeError, TypeError):
-        val = raw
 
     # Bool
     if op_lower == "bool":
@@ -669,7 +659,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "build_condition_constraint",
-        "description": "生成条件值的SMT约束表达式。将IAM条件的值约束编码为SMT表达式（如(= v \"User\")、(> v 5)），使Z3能检测条件间的矛盾。生成的表达式应放入build_smt_model的constraints数组。支持JSON数组格式的条件值（如'[\"2\"]'、'[\"false\"]'、'[\"true\",\"false\"]'），自动提取数组第一个元素。",
+        "description": "生成条件值的SMT约束表达式。将IAM条件的值约束编码为SMT表达式（如(= v \"User\")、(> v 5)），使Z3能检测条件间的矛盾。生成的表达式应放入build_smt_model的constraints数组。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -679,7 +669,7 @@ TOOL_DEFINITIONS = [
                 },
                 "condition_value": {
                     "type": "string",
-                    "description": "条件值（支持纯值或JSON数组格式），如\"5\"、'[\"5\"]'、\"false\"、'[\"false\"]'、\"User\"",
+                    "description": "条件值字符串，如\"5\"、\"false\"、\"User\"、\"prefix*suffix\"",
                 },
                 "var_name": {
                     "type": "string",
