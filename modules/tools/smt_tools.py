@@ -395,19 +395,37 @@ def tool_check_condition_semantics(operator: str, condition_key: str, condition_
     """检查IAM条件语义是否矛盾。
 
     检测模式：
-    - bool + value="false" → 语义矛盾，必返回 "false"
+    - bool + ["false"] → 语义矛盾，必返回 "false"
+    - bool + ["true", "false"] → 同时包含true/false覆盖所有可能，不矛盾
     - 其他模式可后续扩展
+
+    condition_value 参数接受 JSON 数组字符串，代表 IAM 条件值的完整数组。
+    工具内部处理 OR 语义：bool + ["true", "false"] 不是矛盾。
 
     Args:
         operator: IAM条件操作符
         condition_key: IAM条件键
-        condition_value: 条件值（IAM 条件值数组的第一个元素）
+        condition_value: 条件值数组（JSON格式字符串，如 '["false"]'、'["true","false"]'、'"true"'）
 
     Returns:
         "false"（语义矛盾→放入 constraints→UNSAT）或 "true"（语义正常）
     """
     op_lower = operator.lower().strip()
-    val_lower = condition_value.lower().strip() if condition_value else ""
+
+    # 尝试将 condition_value 解析为 JSON 数组
+    try:
+        parsed = json.loads(condition_value) if condition_value else ""
+    except (json.JSONDecodeError, TypeError):
+        parsed = condition_value
+
+    if isinstance(parsed, list):
+        str_vals = [str(v).lower().strip() for v in parsed]
+        # IAM 条件值数组是 OR 关系：同时包含 true 和 false → 覆盖所有可能，不矛盾
+        if "true" in str_vals and "false" in str_vals:
+            return "true"
+        val_lower = str_vals[0] if str_vals else ""
+    else:
+        val_lower = str(parsed).lower().strip() if parsed else ""
 
     if op_lower == "bool" and val_lower == "false":
         return "false"
@@ -619,7 +637,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "check_condition_semantics",
-        "description": "检查IAM条件语义是否矛盾（如bool条件值为false）。返回false（语义矛盾→放入constraints→UNSAT）或true（语义正常）。注意：该工具一次只检查单个值（condition_value参数应为IAM值数组的第一个元素）。如果条件值数组同时包含\"true\"和\"false\"（如[\"true\",\"false\"]），两者覆盖所有可能性，不是矛盾。与check_type_compatibility不同：check_type_compatibility检查操作符与键的类型兼容性，此工具检查条件值的语义正确性。",
+        "description": "检查IAM条件语义是否矛盾（如bool条件值为false）。返回false（语义矛盾→放入constraints→UNSAT）或true（语义正常）。condition_value接受JSON数组字符串（如'[\"false\"]'、'[\"true\",\"false\"]'），工具内部处理OR语义：同时包含true和false覆盖所有可能，不视为矛盾。与check_type_compatibility不同：check_type_compatibility检查操作符与键的类型兼容性，此工具检查条件值的语义正确性。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -633,7 +651,7 @@ TOOL_DEFINITIONS = [
                 },
                 "condition_value": {
                     "type": "string",
-                    "description": "条件值（IAM配置中条件值数组的第一个元素），如false、5、User等",
+                    "description": "条件值数组（JSON格式字符串，传完整数组，非单个值），如'[\"false\"]'、'[\"true\"]'、'[\"true\",\"false\"]'",
                 },
             },
             "required": ["operator", "condition_key", "condition_value"],

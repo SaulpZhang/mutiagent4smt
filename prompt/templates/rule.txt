@@ -59,8 +59,6 @@ Condition 操作符为 `bool` 且值为 `"false"` 时（如 `"bool": {"g:SecureT
 - **必须将 "false" 放入 constraints 数组**，使模型 UNSAT
 - 处理方式与类型不兼容相同
 
-> **注意多值场景**：IAM 条件值数组是 OR 关系。当数组同时包含 `"true"` 和 `"false"`（如 `["true", "false"]`）时，条件覆盖所有可能性，**不是**语义矛盾。仅当数组只有 `"false"` 一个值时才应检测为矛盾。
-
 ### Condition 具体值编码要求
 
 每个 Condition 的值必须编码为 SMT 断言，不能只检查存在性和类型兼容性：
