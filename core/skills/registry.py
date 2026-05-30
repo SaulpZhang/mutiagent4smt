@@ -3,11 +3,11 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from resources.skills.base import SkillDef
+from core.skills.base import SkillDef
 
 
 class SkillRegistry:
-    """Skill 注册中心：自动发现 skills/ 目录下所有 skill
+    """Skill 注册中心：从场景 skill 目录自动发现 skill
 
     每个 skill 是一个子目录，包含:
     - skill.md: LLM 可读的描述文档
@@ -19,7 +19,9 @@ class SkillRegistry:
         self._skills: dict[str, SkillDef] = {}
 
     def discover(self) -> dict[str, SkillDef]:
-        """扫描 skills/ 子目录，自动注册所有 skill"""
+        """扫描 skill 子目录，自动注册所有 skill"""
+        if not self._skills_dir.exists():
+            return self._skills
         for entry in sorted(self._skills_dir.iterdir()):
             if not entry.is_dir() or entry.name.startswith("_") or entry.name.startswith("."):
                 continue

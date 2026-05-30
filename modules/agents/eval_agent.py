@@ -3,16 +3,15 @@ from __future__ import annotations
 import json
 import re
 
-from agent.base import BaseAgent
+from agent.skill_agent import SkillAgent
 from core.schemas import EvaluationItem, EvaluationResult
 from modules.evaluation_module import strip_smt_comments
 
 
-class EvaluationAgent(BaseAgent):
-    """智能体三：语义评估
+class EvaluationAgent:
+    """智能体三：语义评估（ReAct）
 
-    持有 run_z3_check skill：在调用 LLM 前显式执行该 skill 运行 Z3，
-    将 sat/unsat 结果注入 prompt，让 LLM 在评估时参考真实执行结果。
+    通过 ReAct 循环自主调用工具（run_z3_check 等）分析 SMT 代码。
     """
 
     def __init__(
@@ -21,37 +20,21 @@ class EvaluationAgent(BaseAgent):
         system_prompt: str,
         llm_client,
         skills: list,
+        max_steps: int = 20,
     ) -> None:
-        super().__init__(name, system_prompt, llm_client)
-        self._skills = {s.name: s for s in skills}
+        self._agent = SkillAgent(name, llm_client, skills, system_prompt, max_steps)
 
     async def run(self, **kwargs) -> EvaluationResult:
         prompt = kwargs.get("prompt", "")
+        trace_logger = kwargs.get("trace_logger")
         if not prompt:
             raise ValueError("缺少prompt参数")
 
-        # 显式执行 run_z3_check skill，将 Z3 结果注入 prompt
-        if "run_z3_check" in self._skills:
-            smt_code = self._extract_smt_code(prompt)
-            if smt_code:
-                clean = strip_smt_comments(smt_code)
-                z3_result = self._skills["run_z3_check"].fn(smt_code=clean)
-                prompt = prompt + f"\n\n## Z3 预执行结果（由 run_z3_check skill 自动执行）\n{z3_result}"
-
-        response = await self._chat(user_message=prompt, json_output=True)
-        return self._parse_response(response)
-
-    def _extract_smt_code(self, text: str) -> str | None:
-        """从 prompt 中提取 SMT 代码块"""
-        # 查找 {{smt_code}} 后的代码块
-        match = re.search(r'SMT-LIB V2代码：\s*\n(.*?)(?=\n约束列表：|\Z)', text, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        # 回退：查找 ```smt2 块
-        match = re.search(r'```(?:smt2|lisp|smt)\s*\n(.*?)```', text, re.DOTALL)
-        if match:
-            return match.group(1).strip()
-        return None
+        result = await self._agent.run(
+            user_message=prompt,
+            trace_logger=trace_logger,
+        )
+        return self._parse_response(result)
 
     def _parse_response(self, response: str) -> EvaluationResult:
         try:
@@ -85,6 +68,17 @@ class EvaluationAgent(BaseAgent):
         return EvaluationResult(items=items, all_satisfied=all_satisfied, summary=summary)
 
     def _extract_json(self, text: str) -> dict:
+        # 先尝试从 markdown 代码块中提取 JSON
+        match = re.search(r'```(?:json)?\s*\n(.*?)```', text, re.DOTALL)
+        if match:
+            candidate = match.group(1).strip()
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict) and ("items" in data or "all_satisfied" in data):
+                    return data
+            except json.JSONDecodeError:
+                pass
+
         for match in re.finditer(r'\{.*?\}', text, re.DOTALL):
             try:
                 data = json.loads(match.group())

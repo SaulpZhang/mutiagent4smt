@@ -25,6 +25,7 @@ class PipelineState(TypedDict):
     instruct_id: str
     account_id: str
     label: bool | None
+    scenario_name: str
 
     # Agent 1 输出
     constraints_list: ConstraintsList | None

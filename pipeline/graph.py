@@ -32,9 +32,15 @@ def decide_evaluation_route(state: PipelineState) -> str:
     return "output"
 
 
-def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
+def build_case_pipeline(
+    scenario_name: str = "valid_permission",
+    run_id: str = "",
+) -> StateGraph:
     """构建单用例处理的流水线"""
-    nodes = PipelineNodes(prompt_type=prompt_type, run_id=run_id)
+    nodes = PipelineNodes(
+        scenario_name=scenario_name,
+        run_id=run_id,
+    )
 
     workflow = StateGraph(PipelineState)
 
@@ -62,7 +68,13 @@ def build_case_pipeline(prompt_type: str = "default", run_id: str = "") -> State
     return workflow
 
 
-def compile_pipeline(prompt_type: str = "default", run_id: str = "") -> StateGraph:
+def compile_pipeline(
+    scenario_name: str = "valid_permission",
+    run_id: str = "",
+) -> StateGraph:
     """编译并返回可执行的流水线"""
-    workflow = build_case_pipeline(prompt_type=prompt_type, run_id=run_id)
+    workflow = build_case_pipeline(
+        scenario_name=scenario_name,
+        run_id=run_id,
+    )
     return workflow.compile()

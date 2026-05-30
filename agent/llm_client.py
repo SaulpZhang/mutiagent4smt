@@ -171,7 +171,7 @@ class LLMClient:
                     try:
                         json.loads(result)
                     except json.JSONDecodeError as e:
-                        raise LLMError(f"LLM未返回合法JSON: {e}\n原始响应: {result[:200]}") from e
+                        raise LLMError(f"LLM未返回合法JSON: {e}\n原始响应: {result}") from e
 
                 return result
             except Exception as e:

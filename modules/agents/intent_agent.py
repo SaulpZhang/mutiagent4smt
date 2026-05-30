@@ -3,15 +3,14 @@ from __future__ import annotations
 import json
 import re
 
-from agent.base import BaseAgent
+from agent.skill_agent import SkillAgent
 from core.schemas import ConstraintsList, Constraint
 
 
-class IntentUnderstandingAgent(BaseAgent):
-    """智能体一：意图理解
+class IntentUnderstandingAgent:
+    """智能体一：意图理解（ReAct）
 
-    持有 parse_iam_config skill：在调用 LLM 前显式执行该 skill 解析 IAM 配置，
-    将结构化解析结果注入 prompt，帮助 LLM 生成更准确的约束列表。
+    通过 ReAct 循环自主调用工具分析 IAM 配置并生成约束列表。
     """
 
     def __init__(
@@ -20,31 +19,21 @@ class IntentUnderstandingAgent(BaseAgent):
         system_prompt: str,
         llm_client,
         skills: list,
+        max_steps: int = 20,
     ) -> None:
-        super().__init__(name, system_prompt, llm_client)
-        self._skills = {s.name: s for s in skills}
+        self._agent = SkillAgent(name, llm_client, skills, system_prompt, max_steps)
 
     async def run(self, **kwargs) -> ConstraintsList:
         prompt = kwargs.get("prompt", "")
+        trace_logger = kwargs.get("trace_logger")
         if not prompt:
             raise ValueError("缺少prompt参数")
 
-        # 显式执行 parse_iam_config skill，将解析结果注入 prompt
-        if "parse_iam_config" in self._skills:
-            config_json = self._extract_config_json(prompt)
-            if config_json:
-                parsed = self._skills["parse_iam_config"].fn(config_json=config_json)
-                prompt = prompt + f"\n\n## IAM配置解析结果（由 parse_iam_config skill 自动生成）\n{parsed}"
-
-        response = await self._chat(user_message=prompt, json_output=True)
-        return self._parse_response(response)
-
-    def _extract_config_json(self, text: str) -> str | None:
-        """从 prompt 中提取 IAM 配置 JSON 块"""
-        match = re.search(r'\{[\s\S]*?"Statement"[\s\S]*?\}', text)
-        if match:
-            return match.group()
-        return None
+        result = await self._agent.run(
+            user_message=prompt,
+            trace_logger=trace_logger,
+        )
+        return self._parse_response(result)
 
     def _parse_response(self, response: str) -> ConstraintsList:
         try:
@@ -66,6 +55,17 @@ class IntentUnderstandingAgent(BaseAgent):
         return ConstraintsList(constraints=constraints)
 
     def _extract_json(self, text: str) -> dict:
+        # 先尝试从 markdown 代码块中提取 JSON
+        match = re.search(r'```(?:json)?\s*\n(.*?)```', text, re.DOTALL)
+        if match:
+            candidate = match.group(1).strip()
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict) and "constraints" in data:
+                    return data
+            except json.JSONDecodeError:
+                pass
+
         for match in re.finditer(r'\{.*?\}', text, re.DOTALL):
             candidate = match.group()
             try:

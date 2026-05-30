@@ -16,6 +16,7 @@ import argparse
 import asyncio
 from datetime import datetime
 import json
+from pathlib import Path
 
 
 def main() -> None:
@@ -40,6 +41,11 @@ def main() -> None:
     run_parser.add_argument(
         "--prompt-type", type=str, default="default",
         help="提示词类型（默认default，对应 templates/ 目录）",
+    )
+    run_parser.add_argument(
+        "--scenario", type=str, default="valid_permission",
+        choices=["valid_permission", "bucket_public_access", "check_no_new_access", "privilege_escalation_path"],
+        help="场景名称（默认 valid_permission），决定使用的 skill 和 prompt 模板",
     )
     run_parser.add_argument(
         "--runid", type=str, default=None,
@@ -140,7 +146,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         for attempt_num in range(1, attempts + 1):
             # 每次尝试创建全新的3个Agent
-            case_pipeline = compile_pipeline(prompt_type=prompt_type, run_id=run_id)
+            case_pipeline = compile_pipeline(
+                scenario_name=args.scenario,
+                run_id=run_id,
+            )
 
             record = ExperimentRecord(
                 instruct_id=case.instruct_id,
@@ -156,6 +165,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 "instruct_id": case.instruct_id,
                 "account_id": case.account_id,
                 "label": label,
+                "scenario_name": args.scenario,
                 "constraints_list": None,
                 "smt_code": None,
                 "syntax_result": None,
@@ -192,11 +202,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                     code = final_state.get("smt_code")
                     if code:
                         record.generated_code = code.code
-                        from pathlib import Path as _Path
-                        code_dir = _Path(settings.results_dir) / run_id
+                        code_dir = Path(settings.experiments_dir) / run_id / "code"
                         code_dir.mkdir(parents=True, exist_ok=True)
                         code_path = code_dir / f"{case.instruct_id}.smt2"
-                        _Path(code_path).write_text(code.code)
+                        code_path.write_text(code.code)
                     saved_record = record
                     print(f"  [{case_num}/{total}] {case.instruct_id}[A{attempt_num}] [!] {error_msg}")
                 else:
@@ -370,7 +379,7 @@ def init_project() -> None:
     """初始化项目检查"""
     from config import settings
     from pathlib import Path
-    from resources.prompt.manager import PromptManager
+    from core.prompt_manager import PromptManager
     from modules.input_module import InputModule
 
     print("=" * 60)
@@ -399,20 +408,23 @@ def init_project() -> None:
         print(f"  [!] 数据目录不存在: {settings.data_dir}")
 
     print(f"\n[Prompt]")
-    print(f"  当前类型:  {settings.prompt_type}")
-    # 列出所有可用类型
+    print(f"  可用场景:")
+    # 列出可用场景
     from pathlib import Path as _Path
-    templates_root = _Path(__file__).parent / "resources" / "prompt" / "templates"
-    types = ["default"]
-    for d in templates_root.iterdir():
-        if d.is_dir() and not d.name.startswith("."):
-            types.append(d.name)
-    for pt in types:
-        pm = PromptManager(prompt_type=pt)
-        templates = pm.list_templates()
-        print(f"  [{pt}] {len(templates)} 个模板")
-        for t in templates:
-            print(f"    - {t}")
+    scenarios_root = _Path(__file__).parent / "resources" / "scenarios"
+    scenarios = []
+    for d in sorted(scenarios_root.iterdir()):
+        if d.is_dir() and not d.name.startswith("_"):
+            prompt_dir = d / "prompt"
+            if prompt_dir.exists() and any(prompt_dir.glob("agent*.md")):
+                scenarios.append(d.name)
+    for sc in scenarios:
+        pm = PromptManager(scenario_name=sc)
+        prompt_dir = _Path(__file__).parent / "resources" / "scenarios" / sc / "prompt"
+        prompt_files = sorted(prompt_dir.glob("agent*.md"))
+        print(f"  [{sc}] {len(prompt_files)} 个 prompt 文件")
+        for pf in prompt_files:
+            print(f"    - {pf.name}")
 
     print(f"\n[依赖]")
     try:

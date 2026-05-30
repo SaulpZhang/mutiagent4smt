@@ -8,7 +8,7 @@ from langchain_core.tools import StructuredTool
 from langgraph.prebuilt import create_react_agent
 
 from agent.llm_client import LLMClient
-from resources.skills.base import SkillDef
+from core.skills.base import SkillDef
 
 
 def format_messages(messages: list, label: str) -> str:
@@ -24,7 +24,7 @@ def format_messages(messages: list, label: str) -> str:
                 content = m.content + "\n" + content
         elif isinstance(m, ToolMessage):
             c = m.content.strip()
-            content = f"[tool_result] {c[:200]}{'...' if len(c) > 200 else ''}"
+            content = f"[tool_result] {c}"
         elif isinstance(m.content, str):
             content = m.content
         else:
@@ -66,7 +66,7 @@ class SkillAgent:
             if len(printed) > 200:
                 print(f"    ✓ {skill.name} 返回 ({len(printed)} 字符)")
             else:
-                print(f"    ✓ {skill.name} → {printed[:200]}")
+                print(f"    ✓ {skill.name} → {printed}")
             return str(result)
 
         return StructuredTool.from_function(
@@ -125,7 +125,7 @@ class SkillAgent:
                                 args_str = json.dumps(tc["args"], ensure_ascii=False)[:300]
                                 print(f"  [{react_step}] LLM → {tc['name']}({args_str})")
                         elif msg.content and msg.content.strip():
-                            c = msg.content.strip()[:200]
+                            c = msg.content.strip()
                             print(f"  [{react_step}] LLM: {c}")
                         if trace_logger and collected:
                             self._log_to_trace(trace_logger, react_step, collected, node_name)

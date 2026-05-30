@@ -17,9 +17,9 @@ def _ensure_dir(path: str) -> None:
 class OutputModule:
     """输出模块：生成包含SMT-LIB V2代码和评估结果的最终输出文件"""
 
-    def __init__(self, output_dir: str, run_id: str = "") -> None:
-        self.output_dir = str(Path(output_dir) / run_id) if run_id else output_dir
-        _ensure_dir(self.output_dir)
+    def __init__(self, code_output_dir: str, run_id: str) -> None:
+        self.code_dir = Path(code_output_dir) / run_id / "code"
+        _ensure_dir(str(self.code_dir))
 
     def generate_output(
         self,
@@ -34,7 +34,7 @@ class OutputModule:
         comment_lines = self._format_comments(code, evaluation)
         full_content = code.code + "\n\n" + comment_lines
 
-        file_path = str(Path(self.output_dir) / f"{output_name}.smt2")
+        file_path = str(self.code_dir / f"{output_name}.smt2")
         _write_text(file_path, full_content)
 
         return OutputResult(

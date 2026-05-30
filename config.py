@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # Data paths
     data_dir: str = str(Path(__file__).parent / "valid_permission")
-    results_dir: str = str(Path(__file__).parent / "data" / "results")
+    experiments_dir: str = str(Path(__file__).parent / "data")
     db_path: str = str(Path(__file__).parent / "data" / "experiments.db")
 
     # Prompt

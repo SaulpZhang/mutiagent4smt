@@ -11,19 +11,31 @@ from modules.evaluation_module import EvaluationModule
 from modules.output_module import OutputModule
 from modules.verification_module import VerificationModule
 from modules.agent_builder import AgentBuilder
-from resources.prompt.manager import PromptManager
+from core.prompt_manager import PromptManager
 
 
 class PipelineNodes:
     """流水线节点适配器：注册所有模块并实现节点函数"""
 
-    def __init__(self, prompt_type: str = "default", run_id: str = "") -> None:
+    def __init__(
+        self,
+        scenario_name: str = "valid_permission",
+        run_id: str = "",
+    ) -> None:
         self._modules: dict[str, Any] = {}
         self.run_id = run_id
+        self.scenario_name = scenario_name
 
-        prompt_manager = PromptManager(prompt_type=prompt_type)
-        agent_builder = AgentBuilder()
+        prompt_manager = PromptManager(scenario_name=scenario_name)
+        agent_builder = AgentBuilder(scenario_name=scenario_name)
         verification_module = VerificationModule()
+
+        # 每个 Agent 独立的日志记录器
+        self._loggers: dict[str, TraceLogger] = {
+            "agent1": TraceLogger(run_id, "agent1"),
+            "agent2": TraceLogger(run_id, "agent2"),
+            "agent3": TraceLogger(run_id, "agent3"),
+        }
 
         # Agent 2: ToolAgent（LLM 自主选择编译器或 Z3 Python）
         tool_agent = agent_builder.build_tool_code_gen_agent()
@@ -37,7 +49,10 @@ class PipelineNodes:
             evaluation_agent=agent_builder.build_eval_agent(),
             prompt_manager=prompt_manager,
         )
-        self._modules["output"] = OutputModule(settings.results_dir, run_id=run_id)
+        self._modules["output"] = OutputModule(
+            code_output_dir=settings.experiments_dir,
+            run_id=run_id,
+        )
         self._modules["verification"] = verification_module
 
     def _get(self, name: str) -> Any:
@@ -45,13 +60,6 @@ class PipelineNodes:
         if m is None:
             raise RuntimeError(f"模块未注册: {name}")
         return m
-
-    def _make_logger(self, state: dict) -> TraceLogger | None:
-        instruct_id = state.get("instruct_id", "unknown")
-        run_id = self.run_id
-        attempt = state.get("extras", {}).get("attempt", 1)
-        log_dir = f"{settings.data_dir}/../data/traces/{run_id}"
-        return TraceLogger(log_dir, instruct_id, attempt=attempt)
 
     async def intent_agent_node(self, state: dict) -> dict:
         """智能体一：意图理解生成约束列表"""
@@ -63,7 +71,10 @@ class PipelineNodes:
         extras["gen_start_time"] = time.perf_counter()
 
         try:
-            constraints = await gen_module.run_intent_analysis(input_data)
+            constraints = await gen_module.run_intent_analysis(
+                input_data,
+                trace_logger=self._loggers["agent1"],
+            )
             return {"extras": extras, "constraints_list": constraints}
         except Exception as e:
             return {"extras": extras, "error_message": f"意图理解失败: {e}"}
@@ -78,7 +89,7 @@ class PipelineNodes:
         constraints = state.get("constraints_list")
         evaluation = state.get("evaluation_result")
         iteration = state.get("iteration", 0)
-        trace_logger = self._make_logger(state)
+        trace_logger = self._loggers["agent2"]
         extras = dict(state.get("extras", {}))
         extras["trace_logger"] = trace_logger
 
@@ -117,7 +128,7 @@ class PipelineNodes:
 
         try:
             result = await eval_module.evaluate(
-                code, constraints, trace_logger=trace_logger, iteration=iteration,
+                code, constraints, trace_logger=self._loggers["agent3"], iteration=iteration,
             )
             return {"evaluation_result": result, "iteration": iteration + 1}
         except Exception as e:
@@ -144,7 +155,6 @@ class PipelineNodes:
         """验证节点：Z3执行"""
         ver_module: VerificationModule = self._get("verification")
         output = state.get("output_result")
-        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
 
         if not output or not output.code:
             return {}
@@ -152,8 +162,7 @@ class PipelineNodes:
         from core.schemas import VerificationResult
         is_exec, exec_out, exec_ms = ver_module.execute(output.code)
 
-        if trace_logger:
-            trace_logger.log_verify_result(output.code.code, exec_out, exec_ms)
+        self._loggers["agent2"].log_verify_result(output.code.code, exec_out, exec_ms)
 
         return {
             "verification_result": VerificationResult(
