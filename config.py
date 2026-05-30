@@ -39,9 +39,9 @@ class Settings(BaseSettings):
     max_syntax_retries: int = 5
 
     # Data paths
-    data_dir: str = str(Path(__file__).parent / "valid_permission")
-    results_dir: str = str(Path(__file__).parent / "data" / "results")
-    db_path: str = str(Path(__file__).parent / "data" / "experiments.db")
+    data_dir: str = str(Path(__file__).parent / "dataset" / "valid_permission")
+    results_dir: str = str(Path(__file__).parent / "log" / "results")
+    db_path: str = str(Path(__file__).parent / "log" / "experiments.db")
 
     # Prompt
     prompt_type: str = "default"
