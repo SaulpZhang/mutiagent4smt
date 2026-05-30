@@ -197,6 +197,17 @@ class ExperimentRecorder:
         finally:
             conn.close()
 
+    def get_all_run_ids(self) -> list[str]:
+        """获取所有已存在的 run_id 列表"""
+        conn = self._get_conn()
+        try:
+            cursor = conn.execute(
+                "SELECT DISTINCT run_id FROM experiment_runs",
+            )
+            return [row["run_id"] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+
     def get_run_config(self, run_id: str) -> dict | None:
         """查询实验运行参数"""
         conn = self._get_conn()

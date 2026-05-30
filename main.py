@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import datetime
 import json
 from pathlib import Path
 
@@ -105,7 +104,19 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     pairs = input_module.load_all_pairs()
     answers = input_module.load_answers()
 
-    run_id = args.runid or datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    if args.runid:
+        run_id = args.runid
+    else:
+        import re as _re
+        existing = recorder.get_all_run_ids()
+        max_num = 0
+        for rid in existing:
+            m = _re.match(r"run_(\d+)$", rid)
+            if m:
+                n = int(m.group(1))
+                if n > max_num:
+                    max_num = n
+        run_id = f"run_{max_num + 1}"
     print(f"  实验编号: {run_id}\n")
 
     if args.index is not None:
