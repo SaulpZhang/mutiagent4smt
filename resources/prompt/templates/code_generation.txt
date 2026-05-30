@@ -1,0 +1,80 @@
+根据验证指令、IAM配置和约束列表生成SMT-LIB V2代码。
+
+你可以在 ReAct 循环中反复调用工具，逐步构建 SMT-LIB V2 代码。
+
+可用工具：
+- **build_smt_model**：从结构化描述生成完整 SMT-LIB V2（含 variables/assignments/constraints/define_funs）
+- **build_smt_expr**：构建单条 SMT 逻辑表达式（and/or/not/implies/eq/neq）
+- **check_type_compatibility**：检查IAM条件操作符与条件键的类型兼容性，返回 "false"（不兼容，使模型UNSAT）或 "true"（兼容）
+- **build_type_check_smt**：生成类型兼容性检查的 SMT-LIB V2 代码片段（define-fun形式），显式编码操作符和键的类型分类供评估器验证
+- **check_condition_semantics**：检查IAM条件语义是否矛盾（如 bool:false），返回 "false"（矛盾→放入constraints→UNSAT）或 "true"（正常）
+- **build_condition_constraint**：生成条件值的 SMT 约束表达式，将条件的值编码为 Z3 可检测的断言
+
+你可以自由组合多次调用。例如：
+1. 先调 check_type_compatibility 检查政策的 Condition 操作符与键是否类型兼容
+2. 再调 build_smt_expr 构建复杂表达式
+3. 最后调 build_smt_model，把表达式和兼容性检查放进 constraints
+
+**类型兼容性检查**（关键）：对 IAM 配置中的每条 Condition：
+1. 先调 `check_type_compatibility(operator, condition_key)` 检查类型
+2. 如果返回 `"false"`（类型不兼容），**直接将 `"false"` 放入 build_smt_model 的 constraints 数组**，不可作为 assignment 的 value
+3. constraints 中的 `"false"` 会被自动包装为 `(assert false)` → 整个模型 UNSAT
+
+✅ 正确用法（constraints 数组）：
+```json
+"constraints": ["false", "(= c7_valid ...)"]
+```
+
+❌ 错误用法（assignment value）：
+```json
+"assignments": [{"var": "type_ok", "value": "false"}]
+```
+
+**条件语义检查与值约束**（关键，与类型兼容性同等重要）：对每条 Condition，完成类型检查后还必须按以下 2 步继续：
+
+1. **语义检查**：`check_condition_semantics(operator, condition_key, condition_value)`
+   - 返回 `"false"`（语义矛盾）→ **放入 constraints 数组**使模型 UNSAT
+   - 返回 `"true"`（正常）→ 继续下一步
+
+2. **值约束编码**：`build_condition_constraint(operator, condition_value, var_name)`
+   - 生成的表达式（如 `"(> s0_c0_value 5)"`、`"(= s0_c0_value \"User\")"`）**放入 constraints 数组**
+   - 使 Z3 能检测条件值间的矛盾（如 `>5` + `<4` 无整数解）
+
+> ⚠️ 三条缺一不可：类型检查（步骤1）+ 语义检查（步骤2）+ 值编码（步骤3）。只做步骤1不做2和3，Z3 无法检测条件值的矛盾，该 UNSAT 的会变成 SAT。
+
+**完整示例**（一条 Condition 的三步调用 + 最终组装）：
+
+```
+Statement 0, Condition 0: "numericgreaterthan": {"g:MFAAge": ["5"]}
+
+Step 1 类型：check_type_compatibility("numericgreaterthan", "g:MFAAge") → "true"
+         build_type_check_smt("numericgreaterthan", "g:MFAAge", "s0_c0")
+Step 2 语义：check_condition_semantics("numericgreaterthan", "g:MFAAge", "5") → "true"
+Step 3 值：  build_condition_constraint("numericgreaterthan", "5", "s0_c0_value") → "(> s0_c0_value 5)"
+
+build_smt_model(
+  variables=[...],
+  constraints=["(> s0_c0_value 5)"],          ← 步骤3 的结果
+  define_funs_raw="(define-fun s0_c0_op_type ...)\n(define-fun s0_c0_key_type ...)\n(define-fun s0_c0 ...)",  ← 步骤1 的 build_type_check_smt
+)
+```
+
+**语义要点**：Z3 的 `(check-sat)` 检查所有断言是否可同时满足。类型不兼容或语义矛盾意味着策略永不可满足 → 必须通过 `(assert false)` 制造矛盾 → Z3 返回 UNSAT。
+
+**变量命名一致性**：建议 `sN_has_X` (Bool)、`sN_X_value` (String)，N 从 0 开始。
+多次调用间同一变量名必须完全一致。
+
+**重要提醒**：必须通过调用 build_smt_model 工具输出最终 SMT 代码。不要自己拼接 SMT-LIB V2 字符串写在代码块中——手写 SMT 几乎必然导致语法错误（括号不匹配、引号未转义、常量未声明等），已被历史运行证明是最高频的失败原因。使用 build_smt_model 确保输出语法正确的 SMT-LIB V2。
+
+你必须遵守的规则如下：
+
+{{rules}}
+
+验证指令：
+{{instruction}}
+
+IAM配置：
+{{account_data}}
+
+约束列表：
+{{constraints_list}}
