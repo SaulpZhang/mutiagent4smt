@@ -32,8 +32,6 @@ dist/
 .DS_Store
 
 cmd.txt
-valid_permission
-valid_permission/*
 first_interim_report_v1.pdf
 
 # Environment variables
@@ -43,6 +41,9 @@ first_interim_report_v1.pdf
 # Generated data
 data
 data/*
+
+dataset
+dataset/*
 
 # Experiment record backup
 record/

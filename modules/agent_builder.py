@@ -19,6 +19,7 @@ class AgentBuilder:
     """
 
     CODE_GEN_SKILL_NAMES = [
+        "generate_smt_from_policy",
         "build_smt_model",
         "build_smt_expr",
         "check_type_compatibility",
