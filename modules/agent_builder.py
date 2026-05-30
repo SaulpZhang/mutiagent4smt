@@ -67,16 +67,20 @@ class AgentBuilder:
         return "\n".join(lines)
 
     def build_intent_agent(self) -> IntentUnderstandingAgent:
-        system_prompt = self.prompt_manager.load_system_prompt("1")
+        skills = self._registry.get_skills([
+            "parse_iam_config",
+            "check_type_compatibility",
+            "check_condition_semantics",
+        ])
+        tool_descriptions = self._render_tool_descriptions(skills)
+        system_prompt = self.prompt_manager.load_system_prompt(
+            "1", tool_descriptions=tool_descriptions,
+        )
         return IntentUnderstandingAgent(
             name="intent_understanding",
             system_prompt=system_prompt,
             llm_client=self._build_client(settings.agent_1_model),
-            skills=self._registry.get_skills([
-                "parse_iam_config",
-                "check_type_compatibility",
-                "check_condition_semantics",
-            ]),
+            skills=skills,
             max_steps=20,
         )
 
@@ -96,15 +100,19 @@ class AgentBuilder:
         )
 
     def build_eval_agent(self) -> EvaluationAgent:
-        system_prompt = self.prompt_manager.load_system_prompt("3")
+        skills = self._registry.get_skills([
+            "run_z3_check",
+            "check_type_compatibility",
+            "check_condition_semantics",
+        ])
+        tool_descriptions = self._render_tool_descriptions(skills)
+        system_prompt = self.prompt_manager.load_system_prompt(
+            "3", tool_descriptions=tool_descriptions,
+        )
         return EvaluationAgent(
             name="evaluation",
             system_prompt=system_prompt,
             llm_client=self._build_client(settings.agent_3_model),
-            skills=self._registry.get_skills([
-                "run_z3_check",
-                "check_type_compatibility",
-                "check_condition_semantics",
-            ]),
+            skills=skills,
             max_steps=20,
         )

@@ -37,13 +37,6 @@ class GenerationModule:
             account_data=str(input_data.account_data),
         )
         result = await self.intent_agent.run(prompt=user_prompt, trace_logger=trace_logger)
-        if trace_logger:
-            trace_logger.log(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                response=str(result),
-                iteration=1,
-            )
         return result  # type: ignore[return-value]
 
     async def run_code_generation(
@@ -81,11 +74,4 @@ class GenerationModule:
             evaluation_feedback=evaluation_feedback,
             trace_logger=trace_logger,
         )
-        if trace_logger:
-            trace_logger.log(
-                system_prompt=self.tool_agent.system_prompt,
-                user_prompt=prompt_text,
-                response=result.code,
-                iteration=iteration,
-            )
         return result

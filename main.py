@@ -59,6 +59,10 @@ def main() -> None:
         "--to", type=int, default=None,
         help="结束用例编号（左开右闭，即包含此用例），从1开始",
     )
+    run_parser.add_argument(
+        "--workers", type=int, default=1,
+        help="并行工作线程数（默认1，32线程加速全量实验）",
+    )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
     subparsers.add_parser("init", help="初始化项目（检查配置和依赖）")
@@ -120,6 +124,8 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             print(f"，总计 {total * attempts} 条记录", end="")
         print("\n")
 
+    workers = args.workers or 1
+
     # 保存本次实验的运行参数
     recorder.save_run_config(run_id, {
         "prompt_type": prompt_type,
@@ -128,6 +134,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         "max_iterations": settings.max_iterations,
         "max_syntax_retries": settings.max_syntax_retries,
         "total_cases": total,
+        "workers": workers,
     })
 
     async def process_one(idx: int) -> dict:
@@ -149,6 +156,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             case_pipeline = compile_pipeline(
                 scenario_name=args.scenario,
                 run_id=run_id,
+                instruct_id=case.instruct_id,
             )
 
             record = ExperimentRecord(
@@ -294,14 +302,23 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
         return result
 
-    # 串行处理所有用例
+    # 并行处理所有用例
     if attempts > 1:
         print(f"  每用例循环 {attempts} 次, 共 {total * attempts} 次 Agent 调用\n")
+    print(f"  并行: {workers} 线程\n")
+
+    sem = asyncio.Semaphore(workers)
+
+    async def run_one(idx: int) -> dict:
+        async with sem:
+            return await process_one(idx)
+
     from tqdm import tqdm
     all_results = []
     try:
-        for idx in tqdm(indices, desc="处理用例", unit="用例"):
-            all_results.append(await process_one(idx))
+        tasks = [asyncio.create_task(run_one(idx)) for idx in indices]
+        for coro in tqdm(asyncio.as_completed(tasks), total=len(tasks), desc="处理用例", unit="用例"):
+            all_results.append(await coro)
     finally:
         # 确保释放httpx共享连接池（防止信号量泄漏）
         from agent.llm_client import LLMClient

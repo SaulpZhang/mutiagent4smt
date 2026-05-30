@@ -85,13 +85,13 @@ class SkillAgent:
         extract_tool: str | None = None,
         trace_logger: Any = None,
     ) -> str:
-        """运行 ReAct 循环
+        """运行 ReAct 循环（对话式日志）
 
         Args:
             user_message: 用户提示词
             extract_tool: 若指定，从该工具的输出提取最终结果
                           （如 Agent 2 的 build_smt_model）
-            trace_logger: 可选 TraceLogger，记录 ReAct trace
+            trace_logger: 可选 TraceLogger，记录对话式日志
 
         Returns:
             最终响应文本（LLM 回复或工具输出）
@@ -106,9 +106,15 @@ class SkillAgent:
             HumanMessage(content=user_message),
         ]
 
+        # 对话式日志：记录初始 system + user
+        if trace_logger:
+            trace_logger.log_message("system", self.system_prompt)
+            trace_logger.log_message("user", user_message)
+
         print(f"  [{self.name}] 启动 ReAct（最大 {self.max_steps} 步）")
         print(f"  ── ReAct Trace ──")
         collected: list = []
+        seen_ids: set[int] = set()  # 以 id(msg) 去重，应对 LangGraph 流式事件结构
         react_step = 0
 
         async for event in agent.astream(
@@ -118,17 +124,31 @@ class SkillAgent:
             for node_name, data in event.items():
                 msgs = data.get("messages", [])
                 for msg in msgs:
+                    if id(msg) in seen_ids:
+                        continue
+                    seen_ids.add(id(msg))
                     collected.append(msg)
-                    if node_name == "agent":
-                        if isinstance(msg, AIMessage) and msg.tool_calls:
+
+                    # 已单独记录的初始消息不再重复
+                    if isinstance(msg, (SystemMessage, HumanMessage)):
+                        continue
+
+                    if node_name == "agent" and isinstance(msg, AIMessage):
+                        if msg.tool_calls:
                             for tc in msg.tool_calls:
                                 args_str = json.dumps(tc["args"], ensure_ascii=False)[:300]
                                 print(f"  [{react_step}] LLM → {tc['name']}({args_str})")
+                            calls = ", ".join(f"{tc['name']}(...)" for tc in msg.tool_calls)
+                            log_content = f"[tool_calls: {calls}]"
+                            if msg.content and msg.content.strip():
+                                log_content = msg.content.strip() + "\n" + log_content
+                            if trace_logger:
+                                trace_logger.log_message("assistant", log_content, step=react_step)
                         elif msg.content and msg.content.strip():
                             c = msg.content.strip()
                             print(f"  [{react_step}] LLM: {c}")
-                        if trace_logger and collected:
-                            self._log_to_trace(trace_logger, react_step, collected, node_name)
+                            if trace_logger:
+                                trace_logger.log_message("assistant", c, step=react_step)
                     elif node_name == "tools":
                         c = msg.content.strip() if msg.content else ""
                         if len(c) > 150:
@@ -136,20 +156,13 @@ class SkillAgent:
                         else:
                             print(f"  [{react_step}] 工具 {msg.name}: {c}")
                         if trace_logger and c:
-                            trace_logger.log_react_message(react_step, f"tool_{msg.name}", c)
+                            trace_logger.log_message(f"tool.{msg.name}", c, step=react_step)
             react_step += 1
 
         self._last_messages = collected
         result = self._extract_result(collected, extract_tool)
         print(f"  [{self.name}] 结束（{react_step} 步）")
         return result
-
-    def _log_to_trace(self, trace_logger: Any, step: int, collected: list, node: str) -> None:
-        """写入 trace 日志"""
-        prompt_msgs = collected[:-1]
-        if prompt_msgs:
-            prompt_str = format_messages(prompt_msgs, f"Prompt_{step}")
-            trace_logger.log_react_message(step, "LLM_prompt", prompt_str)
 
     def _extract_result(self, messages: list, extract_tool: str | None = None) -> str:
         """从 ReAct 消息中提取最终结果"""

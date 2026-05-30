@@ -35,11 +35,13 @@ def decide_evaluation_route(state: PipelineState) -> str:
 def build_case_pipeline(
     scenario_name: str = "valid_permission",
     run_id: str = "",
+    instruct_id: str = "",
 ) -> StateGraph:
     """构建单用例处理的流水线"""
     nodes = PipelineNodes(
         scenario_name=scenario_name,
         run_id=run_id,
+        instruct_id=instruct_id,
     )
 
     workflow = StateGraph(PipelineState)
@@ -71,10 +73,12 @@ def build_case_pipeline(
 def compile_pipeline(
     scenario_name: str = "valid_permission",
     run_id: str = "",
+    instruct_id: str = "",
 ) -> StateGraph:
     """编译并返回可执行的流水线"""
     workflow = build_case_pipeline(
         scenario_name=scenario_name,
         run_id=run_id,
+        instruct_id=instruct_id,
     )
     return workflow.compile()

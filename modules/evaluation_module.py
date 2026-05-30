@@ -39,11 +39,4 @@ class EvaluationModule:
             constraints_list=constraints.model_dump_json(),
         )
         result = await self.evaluation_agent.run(prompt=user_prompt, trace_logger=trace_logger)
-        if trace_logger:
-            trace_logger.log(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                response=str(result),
-                iteration=iteration,
-            )
         return result  # type: ignore[return-value]

@@ -21,6 +21,7 @@ class PipelineNodes:
         self,
         scenario_name: str = "valid_permission",
         run_id: str = "",
+        instruct_id: str = "",
     ) -> None:
         self._modules: dict[str, Any] = {}
         self.run_id = run_id
@@ -30,11 +31,11 @@ class PipelineNodes:
         agent_builder = AgentBuilder(scenario_name=scenario_name)
         verification_module = VerificationModule()
 
-        # 每个 Agent 独立的日志记录器
+        # 每个 Agent 独立的日志记录器（按用例分目录）
         self._loggers: dict[str, TraceLogger] = {
-            "agent1": TraceLogger(run_id, "agent1"),
-            "agent2": TraceLogger(run_id, "agent2"),
-            "agent3": TraceLogger(run_id, "agent3"),
+            "agent1": TraceLogger(run_id, "agent1", case_id=instruct_id),
+            "agent2": TraceLogger(run_id, "agent2", case_id=instruct_id),
+            "agent3": TraceLogger(run_id, "agent3", case_id=instruct_id),
         }
 
         # Agent 2: ToolAgent（LLM 自主选择编译器或 Z3 Python）
@@ -70,6 +71,8 @@ class PipelineNodes:
         extras = dict(state.get("extras", {}))
         extras["gen_start_time"] = time.perf_counter()
 
+        self._loggers["agent1"].log_separator("意图理解 — 约束生成")
+
         try:
             constraints = await gen_module.run_intent_analysis(
                 input_data,
@@ -95,6 +98,12 @@ class PipelineNodes:
 
         if not input_data or not constraints:
             return {"error_message": "缺少输入数据或约束列表"}
+
+        # 对话式日志：迭代分隔
+        if iteration > 0:
+            trace_logger.log_separator(f"Code Generation — Iteration {iteration}（反馈修正）")
+        else:
+            trace_logger.log_separator("Code Generation — 初始生成")
 
         try:
             if iteration > 0 and evaluation:
@@ -126,6 +135,9 @@ class PipelineNodes:
         if not code or not constraints:
             return {"error_message": "缺少代码或约束列表"}
 
+        # 对话式日志：评估分隔
+        self._loggers["agent3"].log_separator(f"Evaluation — Iteration {iteration}")
+
         try:
             result = await eval_module.evaluate(
                 code, constraints, trace_logger=self._loggers["agent3"], iteration=iteration,
@@ -139,13 +151,14 @@ class PipelineNodes:
         output_module: OutputModule = self._get("output")
         code = state.get("smt_code")
         evaluation = state.get("evaluation_result")
+        constraints = state.get("constraints_list")
         instruct_id = state.get("instruct_id", "unknown")
 
         if not code or not evaluation:
             error_msg = state.get("error_message", "未知错误")
             output_result = output_module.generate_error_output(error_msg, instruct_id)
         else:
-            output_result = output_module.generate_output(code, evaluation, instruct_id)
+            output_result = output_module.generate_output(code, evaluation, instruct_id, constraints)
 
         extras = dict(state.get("extras", {}))
         extras["gen_end_time"] = time.perf_counter()
