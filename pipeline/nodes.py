@@ -11,7 +11,7 @@ from modules.evaluation_module import EvaluationModule
 from modules.output_module import OutputModule
 from modules.verification_module import VerificationModule
 from modules.agent_builder import AgentBuilder
-from prompt.manager import PromptManager
+from resources.prompt.manager import PromptManager
 
 
 class PipelineNodes:

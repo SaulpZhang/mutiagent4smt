@@ -3,7 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.schemas import EvaluationResult, OutputResult, SMTLibCode
-from utils.file_utils import write_text, ensure_dir
+
+
+def _write_text(path: str, content: str) -> None:
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(content, encoding="utf-8")
+
+
+def _ensure_dir(path: str) -> None:
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
 class OutputModule:
@@ -11,7 +19,7 @@ class OutputModule:
 
     def __init__(self, output_dir: str, run_id: str = "") -> None:
         self.output_dir = str(Path(output_dir) / run_id) if run_id else output_dir
-        ensure_dir(self.output_dir)
+        _ensure_dir(self.output_dir)
 
     def generate_output(
         self,
@@ -27,7 +35,7 @@ class OutputModule:
         full_content = code.code + "\n\n" + comment_lines
 
         file_path = str(Path(self.output_dir) / f"{output_name}.smt2")
-        write_text(file_path, full_content)
+        _write_text(file_path, full_content)
 
         return OutputResult(
             code=code,

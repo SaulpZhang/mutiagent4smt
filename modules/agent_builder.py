@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from config import settings
 from agent.llm_client import LLMClient
-from agent.tool_agent import ToolAgent, ToolDef
+from agent.tool_agent import ToolAgent
+from resources.skills.registry import SkillRegistry
 from modules.agents.intent_agent import IntentUnderstandingAgent
 from modules.agents.eval_agent import EvaluationAgent
 
 
 class AgentBuilder:
-    """Agent装配器：创建并配置所有Agent
+    """Agent 装配器：通过 SkillRegistry 加载 skill，按场景装配 Agent
 
-    Agent 1: 意图理解 - 分析验证指令，生成约束列表
-    Agent 2: 代码生成 - ToolAgent，LLM 自主选择编译器或 Z3 Python 生成 SMT 代码
-    Agent 3: 评估 - 逐项评估代码是否满足约束
+    Agent 1: 意图理解 — skills: [parse_iam_config]
+    Agent 2: 代码生成 — skills: [build_smt_model, build_smt_expr, check_type_compatibility,
+                                   build_type_check_smt, check_condition_semantics,
+                                   build_condition_constraint]
+    Agent 3: 语义评估 — skills: [run_z3_check]
     """
 
     SYSTEM_PROMPTS = {
@@ -28,13 +33,24 @@ class AgentBuilder:
         ),
     }
 
+    CODE_GEN_SKILL_NAMES = [
+        "build_smt_model",
+        "build_smt_expr",
+        "check_type_compatibility",
+        "build_type_check_smt",
+        "check_condition_semantics",
+        "build_condition_constraint",
+    ]
+
+    def __init__(self) -> None:
+        self._registry = SkillRegistry()
+        self._registry.discover()
+
     def _build_client(self, model_name: str) -> LLMClient:
         actual_model = model_name or settings.common_model or settings.model_name
         return LLMClient(model_name=actual_model)
 
     def _build_client_no_thinking(self, model_name: str, temperature: float | None = None) -> LLMClient:
-        """构建不带 thinking 模式的客户端（用于 ToolAgent ReAct 循环，
-        DeepSeek thinking 模式要求回传 reasoning_content，与 LangGraph ReAct 不兼容）"""
         actual_model = model_name or settings.common_model or settings.model_name
         return LLMClient(
             model_name=actual_model,
@@ -43,48 +59,40 @@ class AgentBuilder:
             reasoning_effort="",
         )
 
+    def _render_code_gen_prompt(self, skills: list) -> str:
+        """渲染 Agent 2 系统提示词：工具描述替换到模板中"""
+        tool_lines = []
+        for s in skills:
+            props = s.parameters.get("properties", {})
+            param_str = ", ".join(f"{n}({p.get('type','?')})" for n, p in props.items())
+            tool_lines.append(f"- **{s.name}({param_str})**: {s.description[:200]}")
+        tool_descriptions = "\n".join(tool_lines)
+
+        flow_steps = [f"{i+1}. {s.name}" for i, s in enumerate(skills)]
+        recommended_flow = "\n".join(flow_steps)
+
+        template_path = Path(__file__).parent.parent / "resources" / "prompt" / "templates" / "tool_agent_system.txt"
+        template = template_path.read_text(encoding="utf-8")
+        return template.replace("{{tool_descriptions}}", tool_descriptions).replace(
+            "{{recommended_flow}}", recommended_flow
+        )
+
     def build_intent_agent(self) -> IntentUnderstandingAgent:
         return IntentUnderstandingAgent(
             name="intent_understanding",
             system_prompt=self.SYSTEM_PROMPTS["intent"],
             llm_client=self._build_client(settings.agent_1_model),
+            skills=self._registry.get_skills(["parse_iam_config"]),
         )
 
     def build_tool_code_gen_agent(self) -> ToolAgent:
-        """构建 ToolAgent：LLM 自主选择 SMT 生成工具"""
-        from modules.tools.smt_tools import TOOL_DEFINITIONS
-        from modules.tools.smt_tools import (
-            tool_build_smt_model,
-            tool_build_smt_expr,
-            tool_check_type_compatibility,
-            tool_build_type_check_smt,
-            tool_check_condition_semantics,
-            tool_build_condition_constraint,
-        )
-
-        fn_map = {
-            "build_smt_model": tool_build_smt_model,
-            "build_smt_expr": tool_build_smt_expr,
-            "check_type_compatibility": tool_check_type_compatibility,
-            "build_type_check_smt": tool_build_type_check_smt,
-            "check_condition_semantics": tool_check_condition_semantics,
-            "build_condition_constraint": tool_build_condition_constraint,
-        }
-
-        tools = [
-            ToolDef(
-                name=td["name"],
-                description=td["description"],
-                fn=fn_map[td["name"]],
-                parameters=td["parameters"],
-            )
-            for td in TOOL_DEFINITIONS
-        ]
-
+        skills = self._registry.get_skills(self.CODE_GEN_SKILL_NAMES)
+        system_prompt = self._render_code_gen_prompt(skills)
         return ToolAgent(
             name="code_gen_tools",
             llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.0),
-            tools=tools,
+            skills=skills,
+            system_prompt=system_prompt,
             max_steps=20,
         )
 
@@ -93,4 +101,5 @@ class AgentBuilder:
             name="evaluation",
             system_prompt=self.SYSTEM_PROMPTS["eval"],
             llm_client=self._build_client(settings.agent_3_model),
+            skills=self._registry.get_skills(["run_z3_check"]),
         )

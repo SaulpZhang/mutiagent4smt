@@ -1,262 +1,92 @@
-"""ToolAgent: 基于 LangGraph create_react_agent 的工具调用 Agent。
+"""ToolAgent: 代码生成专用 Agent，基于 SkillAgent + 代码生成特有逻辑
 
-与 BaseAgent 不同，ToolAgent 将工具绑定到 LLM（bind_tools），
-通过 LangGraph 的 ReAct 循环自动调度工具调用。
-
-核心工具：
-1. compile_iam_policy — 确定性 IAM→SMT 编译器（由 LLM 自主调用）
-2. execute_z3_python — 执行 Z3 Python 代码并导出 SMT-LIB V2（由 LLM 调用）
-
-LLM 自主判断使用哪个工具。
+与通用 SkillAgent 的区别：
+1. 使用 code_generation.txt 构建用户消息（含规则、约束、IAM配置）
+2. 评估反馈注入（regeneration_feedback.txt + 上一轮 ReAct trace）
+3. 最终代码从 build_smt_model 工具输出提取
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any, Callable
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import StructuredTool
-from langgraph.prebuilt import create_react_agent
-
-from agent.base import BaseAgent
-from agent.llm_client import LLMClient
+from agent.skill_agent import SkillAgent
 from core.schemas import EvaluationResult, SMTLibCode
-from prompt.manager import PromptManager
-
-_TEMPLATE_PATH = Path(__file__).parent.parent / "prompt" / "templates" / "tool_agent_system.txt"
 
 
-def _format_messages(messages: list, label: str) -> str:
-    """将消息列表格式化为可读文本"""
-    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-
-    parts = [f"### {label} ###\n"]
-    for i, m in enumerate(messages):
-        role = type(m).__name__.replace("Message", "").lower()
-        content = ""
-        if isinstance(m, AIMessage) and m.tool_calls:
-            calls = ", ".join(f"{tc['name']}(...)" for tc in m.tool_calls)
-            content = f"[tool_calls: {calls}]"
-            if m.content:
-                content = m.content + "\n" + content
-        elif isinstance(m, ToolMessage):
-            c = m.content.strip()
-            content = f"[tool_result] {c[:200]}{'...' if len(c) > 200 else ''}"
-        elif isinstance(m.content, str):
-            content = m.content
-        else:
-            content = str(m.content)
-        parts.append(f"[{i}][{role}]: {content}\n")
-    return "".join(parts)
-
-
-class ToolDef:
-    """工具定义（轻量元数据，用于构建 LangChain Tool）"""
+class ToolAgent:
+    """Agent 2: 代码生成 — SkillAgent + 代码生成特有逻辑"""
 
     def __init__(
         self,
         name: str,
-        description: str,
-        fn: Callable,
-        parameters: dict | None = None,
+        llm_client,
+        skills: list,
+        system_prompt: str,
+        max_steps: int = 20,
     ) -> None:
         self.name = name
-        self.description = description
-        self.fn = fn
-        self.parameters = parameters or {"type": "object", "properties": {}}
+        self._agent = SkillAgent(name, llm_client, skills, system_prompt, max_steps)
+        self.system_prompt = system_prompt
 
-
-class ToolAgent(BaseAgent):
-    """基于 LangGraph create_react_agent 的工具增强 Agent。"""
-
-    def __init__(
+    async def run(
         self,
-        name: str,
-        llm_client: LLMClient,
-        tools: list[ToolDef],
-        max_steps: int = 10,
-    ) -> None:
-        system_prompt = self._build_prompt(tools)
-        super().__init__(name, system_prompt, llm_client)
-        self.tools = {t.name: t for t in tools}
-        self.max_steps = max_steps
-        self._last_messages: list = []
+        prompt: str = "",
+        constraints_json: str = "",
+        account_data: dict | None = None,
+        evaluation_feedback: EvaluationResult | None = None,
+        trace_logger=None,
+    ) -> SMTLibCode:
+        """运行代码生成 ReAct 循环"""
+        from pathlib import Path
+        from resources.prompt.manager import PromptManager
 
-    def _build_prompt(self, tools: list[ToolDef]) -> str:
-        tool_lines = []
-        for t in tools:
-            props = t.parameters.get("properties", {})
-            param_str = ", ".join(f"{n}({p.get('type','?')})" for n, p in props.items())
-            tool_lines.append(f"- **{t.name}({param_str})**: {t.description}")
-        tool_descriptions = "\n".join(tool_lines)
-
-        flow_steps = []
-        for i, t in enumerate(tools, 1):
-            flow_steps.append(f"{i}. {t.name}")
-        recommended_flow = "\n".join(flow_steps)
-
-        template = _TEMPLATE_PATH.read_text(encoding="utf-8")
-        return template.replace("{{tool_descriptions}}", tool_descriptions).replace(
-            "{{recommended_flow}}", recommended_flow
-        )
-
-    async def run(self, **kwargs) -> SMTLibCode:
-        task = kwargs.get("prompt", "")
-        constraints_json = kwargs.get("constraints_json", "")
-        account_data = kwargs.get("account_data", {})
-        evaluation_feedback = kwargs.get("evaluation_feedback", None)
-        trace_logger = kwargs.get("trace_logger", None)
-
-        # ── 构建 LangChain Tools ──
-        lc_tools = self._build_langchain_tools()
-
-        # ── 获取 ChatOpenAI 模型并绑定工具 ──
-        model = self.llm_client._get_model()
-        model_with_tools = model.bind_tools(lc_tools)
-
-        # ── 构建 ReAct Agent ──
-        agent = create_react_agent(
-            model_with_tools,
-            lc_tools,
-        )
-
-        # ── 初始消息 ──
         pm = PromptManager()
+
+        # 加载规则
         rules_path = pm.template_dir / "rule.txt"
         rules_text = rules_path.read_text(encoding="utf-8") if rules_path.exists() else ""
+
+        # 构建用户消息
         user_content = pm.load(
             "code_generation.txt",
-            instruction=task,
-            account_data=json.dumps(account_data, indent=2, ensure_ascii=False),
+            instruction=prompt,
+            account_data=json.dumps(account_data, indent=2, ensure_ascii=False) if account_data else "",
             constraints_list=constraints_json,
             rules=rules_text,
         )
 
-        # 有评估反馈 + 上一轮记录 → 注入再生反馈 prompt
-        if evaluation_feedback and self._last_messages:
-            feedback: EvaluationResult = evaluation_feedback
+        # 评估反馈注入
+        if evaluation_feedback and self._agent._last_messages:
+            feedback = evaluation_feedback
             unsatisfied = [it for it in feedback.items if it.status == "not_satisfied"]
-            unsat_text = "\n".join(
-                f"  - {it.constraint_id}: {it.reason}" for it in unsatisfied
-            ) if unsatisfied else "  无（全部满足）"
+            unsat_text = (
+                "\n".join(
+                    f"  - {it.constraint_id}: {it.reason}" for it in unsatisfied
+                )
+                if unsatisfied
+                else "  无（全部满足）"
+            )
             feedback_prompt = pm.load(
                 "regeneration_feedback.txt",
-                previous_react_trace=_format_messages(self._last_messages, "上一轮 ReAct"),
+                previous_react_trace=self._agent.get_last_trace(),
                 satisfied_count=str(feedback.satisfied_count),
                 total_count=str(len(feedback.items)),
                 unsatisfied_details=unsat_text,
             )
             user_content = feedback_prompt + "\n\n" + user_content
 
-        messages = [
-            SystemMessage(content=self.system_prompt),
-            HumanMessage(content=user_content),
-        ]
-
-        # ── 执行 ReAct 循环（stream 模式输出详细 trace） ──
-        print(f"  [ToolAgent] 启动 LangGraph ReAct（最大 {self.max_steps} 步）")
-        print(f"  ── ReAct Trace ──")
-        collected_messages: list = []
-        react_step = 0
-
-        async for event in agent.astream(
-            {"messages": messages},
-            {"recursion_limit": self.max_steps},
-        ):
-            for node_name, data in event.items():
-                msgs = data.get("messages", [])
-                for msg in msgs:
-                    collected_messages.append(msg)
-                    if node_name == "agent":
-                        if trace_logger and collected_messages:
-                            prompt_msgs = collected_messages[:-1]
-                            if prompt_msgs:
-                                prompt_str = _format_messages(prompt_msgs, "Prompt_" + str(react_step))
-                                trace_logger.log_react_message(react_step, "LLM_prompt", prompt_str)
-
-                        if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            for tc in msg.tool_calls:
-                                args_str = json.dumps(tc["args"], ensure_ascii=False)
-                                line = f"  [{react_step}] LLM → {tc['name']}({args_str[:300]})"
-                                print(line)
-                                if trace_logger:
-                                    trace_logger.log_react_message(react_step, "LLM_call", f"{tc['name']}({args_str})")
-                        elif msg.content and msg.content.strip():
-                            c = msg.content.strip()
-                            print(f"  [{react_step}] LLM: {c[:200]}")
-                            if trace_logger:
-                                trace_logger.log_react_message(react_step, "LLM_response", c)
-                    elif node_name == "tools":
-                        c = msg.content.strip() if msg.content else ""
-                        if len(c) > 150:
-                            print(f"  [{react_step}] 工具 {msg.name}: {len(c)} 字符")
-                        else:
-                            print(f"  [{react_step}] 工具 {msg.name}: {c}")
-                        if trace_logger and c:
-                            trace_logger.log_react_message(react_step, f"tool_{msg.name}", c)
-            react_step += 1
-
-        # ── 从工具结果中提取最终 SMT 代码 ──
-        code = self._extract_final_code(collected_messages)
-
-        if code and not code.startswith("错误"):
-            print(f"  [ToolAgent] 最终代码 ({len(code)} 字符)")
-        else:
-            print(f"  [ToolAgent] 使用占位代码（{code[:100] if code else '空'}）")
-            code = "(check-sat)\n(exit)"
-
-        print(f"  ── ReAct 结束 ({react_step} 步) ──")
-        self._last_messages = collected_messages
-        return SMTLibCode(code=code)
-
-    def _build_langchain_tools(self) -> list:
-        """将 ToolDef 列表转为 LangChain StructuredTool 列表。"""
-        return [self._make_gen_tool(td) for td in self.tools.values()]
-
-    def _make_gen_tool(self, td: ToolDef) -> StructuredTool:
-        """通用工具包装器。"""
-        import functools
-
-        @functools.wraps(td.fn)
-        def wrapped(**kwargs: Any) -> str:
-            result = td.fn(**kwargs)
-            print(f"    ✓ {td.name}: {len(result)} 字符")
-            return result
-
-        return StructuredTool.from_function(
-            name=td.name,
-            description=td.description,
-            func=wrapped,
+        # 执行 ReAct 循环
+        result = await self._agent.run(
+            user_message=user_content,
+            extract_tool="build_smt_model",
+            trace_logger=trace_logger,
         )
 
-    def _extract_final_code(self, messages: list) -> str:
-        """从消息历史中提取最终的 SMT 代码。
+        if not result:
+            result = "(check-sat)\n(exit)"
 
-        优先取 build_smt_model 工具的成功输出，
-        其次回退到 LLM 文本中的代码块。
-        """
-        import re
+        return SMTLibCode(code=result)
 
-        # 优先：从最新往前找第一个成功的工具结果
-        for msg in reversed(messages):
-            if hasattr(msg, "name"):
-                name = getattr(msg, "name", "")
-                if name == "build_smt_model":
-                    content = msg.content.strip() if msg.content else ""
-                    if content and not content.startswith("错误"):
-                        return content
-
-        # 回退：从 LLM 文本中提取代码块
-        for msg in reversed(messages):
-            if hasattr(msg, "content") and isinstance(msg.content, str) and msg.content:
-                content = msg.content.strip()
-                m = re.search(r'```(?:smt2|lisp|smt|z3)?\s*\n(.*?)```', content, re.DOTALL)
-                if m:
-                    return m.group(1).strip()
-
-        return ""
-
-    def _chat(self, user_message: str, json_output: bool = False) -> str:
-        raise NotImplementedError("ToolAgent uses LangGraph ReAct loop")
+    def get_last_trace(self) -> str:
+        return self._agent.get_last_trace()

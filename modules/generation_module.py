@@ -9,7 +9,7 @@ from core.schemas import (
     VerificationInput,
 )
 from core.trace_logger import TraceLogger
-from prompt.manager import PromptManager
+from resources.prompt.manager import PromptManager
 
 
 class GenerationModule:

@@ -5,7 +5,6 @@ from typing import Any, TypedDict
 from core.schemas import (
     ConstraintsList,
     EvaluationResult,
-    ExperimentRecord,
     OutputResult,
     SMTLibCode,
     SyntaxResult,
@@ -49,9 +48,6 @@ class PipelineState(TypedDict):
     max_iterations: int
     max_syntax_retries: int
     regeneration_count: int  # 语法修复耗尽后的重生成次数
-
-    # 实验追踪
-    tracking: ExperimentRecord | None
 
     # 错误
     error_message: str | None

@@ -370,7 +370,7 @@ def init_project() -> None:
     """初始化项目检查"""
     from config import settings
     from pathlib import Path
-    from prompt.manager import PromptManager
+    from resources.prompt.manager import PromptManager
     from modules.input_module import InputModule
 
     print("=" * 60)
@@ -402,7 +402,7 @@ def init_project() -> None:
     print(f"  当前类型:  {settings.prompt_type}")
     # 列出所有可用类型
     from pathlib import Path as _Path
-    templates_root = _Path(__file__).parent / "prompt" / "templates"
+    templates_root = _Path(__file__).parent / "resources" / "prompt" / "templates"
     types = ["default"]
     for d in templates_root.iterdir():
         if d.is_dir() and not d.name.startswith("."):

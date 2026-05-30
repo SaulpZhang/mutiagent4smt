@@ -49,3 +49,6 @@ record/
 
 .DS_Store
 */.DS_Store
+
+cot_smt
+cot_smt/*

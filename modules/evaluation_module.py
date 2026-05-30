@@ -4,8 +4,7 @@ import re
 
 from agent.base import BaseAgent
 from core.schemas import ConstraintsList, EvaluationResult, SMTLibCode
-from core.trace_logger import TraceLogger
-from prompt.manager import PromptManager
+from resources.prompt.manager import PromptManager
 
 
 def strip_smt_comments(code: str) -> str:
@@ -34,16 +33,20 @@ class EvaluationModule:
         self,
         code: SMTLibCode,
         constraints: ConstraintsList,
-        trace_logger: TraceLogger | None = None,
+        trace_logger=None,
         iteration: int = 1,
     ) -> EvaluationResult:
-        """运行智能体三：评估代码是否满足约束列表"""
+        """运行智能体三：评估代码是否满足约束列表
+
+        Agent 3 持有 run_z3_check skill，会在评估前自动执行 Z3，
+        将 sat/unsat 结果作为评估参考。
+        """
         clean_code = strip_smt_comments(code.code)
+
         prompt = self.prompt_manager.load(
             "evaluation.txt",
             smt_code=clean_code,
             constraints_list=constraints.model_dump_json(),
         )
         result = await self.evaluation_agent.run(prompt=prompt)
-
         return result  # type: ignore[return-value]
