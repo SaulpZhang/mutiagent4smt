@@ -62,6 +62,11 @@ def main() -> None:
         "--workers", type=int, default=1,
         help="并行工作线程数（默认1，32线程加速全量实验）",
     )
+    run_parser.add_argument(
+        "--ablation", type=str, default="full",
+        choices=["full", "no_eval", "gen_only"],
+        help="消融模式（full=全部Agent, no_eval=无Agent3评估, gen_only=仅Agent2代码生成）",
+    )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
     subparsers.add_parser("init", help="初始化项目（检查配置和依赖）")
@@ -88,6 +93,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
 
     attempts = args.attempts or 1
     prompt_type = args.prompt_type or "default"
+    ablation_mode = args.ablation or "full"
 
     print("=" * 60)
     print("  CodeV 系统流水线")
@@ -95,6 +101,9 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     if attempts > 1:
         print(f"  尝试次数:   {attempts}（用于PASS@1/3/5统计）")
     print(f"  提示词:     {prompt_type}")
+    if ablation_mode != "full":
+        ablation_labels = {"no_eval": "无Agent3（A1+A2）", "gen_only": "仅Agent2"}
+        print(f"  消融模式:   {ablation_labels.get(ablation_mode, ablation_mode)}")
     print("=" * 60)
 
     input_module = InputModule(settings.data_dir)
@@ -140,6 +149,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     # 保存本次实验的运行参数
     recorder.save_run_config(run_id, {
         "prompt_type": prompt_type,
+        "ablation_mode": ablation_mode,
         "model_used": settings.model_name,
         "attempts": attempts,
         "max_iterations": settings.max_iterations,
@@ -168,6 +178,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                 scenario_name=args.scenario,
                 run_id=run_id,
                 instruct_id=case.instruct_id,
+                ablation_mode=ablation_mode,
             )
 
             record = ExperimentRecord(

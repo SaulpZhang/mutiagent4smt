@@ -65,6 +65,7 @@ class AgentBuilder:
     def build_intent_agent(self) -> IntentUnderstandingAgent:
         skills = self._registry.get_skills([
             "parse_iam_config",
+            "extract_intent_json",
         ])
         tool_descriptions = self._render_tool_descriptions(skills)
         system_prompt = self.prompt_manager.load_system_prompt(

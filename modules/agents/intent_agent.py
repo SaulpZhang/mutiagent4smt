@@ -7,6 +7,15 @@ from agent.skill_agent import SkillAgent
 from core.schemas import ConstraintsList, Constraint
 
 
+def _fix_json(text: str) -> str:
+    """修复 LLM 生成的 JSON 中常见语法问题（未转义引号等）"""
+    # 将中文字符上下文中的 "English" 替换为 「English」
+    text = re.sub(r'([一-鿿])"([^"]*?)"([一-鿿\s，。、；：])', r'\1「\2」\3', text)
+    text = re.sub(r'([一-鿿])"([^"]*?)"', r'\1「\2」', text)
+    text = re.sub(r'"([^"]*?)"([一-鿿])', r'「\1」\2', text)
+    return text
+
+
 class IntentUnderstandingAgent:
     """智能体一：意图理解（ReAct）
 
@@ -31,54 +40,71 @@ class IntentUnderstandingAgent:
 
         result = await self._agent.run(
             user_message=prompt,
+            extract_tool="extract_intent_json",
             trace_logger=trace_logger,
         )
         return self._parse_response(result)
 
     def _parse_response(self, response: str) -> ConstraintsList:
-        try:
-            data = json.loads(response)
-        except json.JSONDecodeError:
-            data = self._extract_json(response)
+        # 优先来自 extract_intent_json 工具的输出（已是合法 JSON）
+        data = self._try_parse(response)
+        if data is None:
+            raise ValueError("未能从LLM响应中解析出约束列表")
 
-        constraints_raw = data.get("constraints", [])
-        constraints = []
-        for i, item in enumerate(constraints_raw):
-            cid = item.get("id", f"C{i + 1}")
-            desc = item.get("description") or item.get("constraint", "")
-            cat = item.get("category", "instruction_derived")
-            constraints.append(Constraint(id=cid, description=desc, category=cat))
+        constraints = [
+            Constraint(
+                id=item.get("id", f"C{i + 1}"),
+                description=item.get("description") or item.get("constraint", ""),
+                category=item.get("category", "instruction_derived"),
+            )
+            for i, item in enumerate(data.get("constraints", []))
+        ]
 
         if not constraints:
             raise ValueError("未能从LLM响应中解析出约束列表")
 
         return ConstraintsList(constraints=constraints)
 
-    def _extract_json(self, text: str) -> dict:
-        # 先尝试从 markdown 代码块中提取 JSON
-        match = re.search(r'```(?:json)?\s*\n(.*?)```', text, re.DOTALL)
+    @staticmethod
+    def _try_parse(text: str) -> dict | None:
+        """多策略尝试解析 JSON"""
+        raw = text.strip()
+
+        # 1) 直接解析
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict) and "constraints" in data:
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        # 2) 从 markdown 代码块中提取
+        match = re.search(r'```(?:json)?\s*\n(.*?)```', raw, re.DOTALL)
         if match:
-            candidate = match.group(1).strip()
             try:
-                data = json.loads(candidate)
+                data = json.loads(match.group(1).strip())
                 if isinstance(data, dict) and "constraints" in data:
                     return data
             except json.JSONDecodeError:
                 pass
 
-        for match in re.finditer(r'\{.*?\}', text, re.DOTALL):
-            candidate = match.group()
+        # 3) 修复未转义引号后重试
+        fixed = _fix_json(raw)
+        try:
+            data = json.loads(fixed)
+            if isinstance(data, dict) and "constraints" in data:
+                return data
+        except json.JSONDecodeError:
+            pass
+
+        # 4) 从修复后的文本中提取代码块
+        match = re.search(r'```(?:json)?\s*\n(.*?)```', fixed, re.DOTALL)
+        if match:
             try:
-                data = json.loads(candidate)
+                data = json.loads(match.group(1).strip())
                 if isinstance(data, dict) and "constraints" in data:
                     return data
             except json.JSONDecodeError:
-                continue
-        match = re.search(r'\{.*\}', text, re.DOTALL)
-        if match:
-            candidate = match.group()
-            try:
-                return json.loads(candidate)
-            except json.JSONDecodeError:
                 pass
-        return {"constraints": []}
+
+        return None

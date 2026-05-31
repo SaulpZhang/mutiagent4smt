@@ -415,12 +415,19 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
     if "null_condition_valid" in needed:
         null_ops = [c for c in conditions if c[0] == "null"]
         if null_ops and has_condition_block:
-            for ci, (op, key, val, _) in enumerate(null_ops):
-                c_idx = ci + 1
-                lines.append(f"(define-fun {pfx}_null_cond_{c_idx}_valid () Bool")
+            lines.append(f"(define-fun {pfx}_null_condition_valid () Bool")
+            if len(null_ops) == 1:
+                c_idx = 1
                 lines.append(f"    (=> (and {pfx}_has_condition (= {pfx}_cond_{c_idx}_operator \"null\"))")
                 lines.append(f"        (or (= {pfx}_cond_{c_idx}_value \"true\") (= {pfx}_cond_{c_idx}_value \"false\")))")
-                lines.append(")")
+            else:
+                lines.append("    (and")
+                for ci, _ in enumerate(null_ops):
+                    c_idx = ci + 1
+                    lines.append(f"        (=> (and {pfx}_has_condition (= {pfx}_cond_{c_idx}_operator \"null\"))")
+                    lines.append(f"            (or (= {pfx}_cond_{c_idx}_value \"true\") (= {pfx}_cond_{c_idx}_value \"false\")))")
+                lines.append("    )")
+            lines.append(")")
 
     # Contradiction detection
     contradictions = _detect_contradictions(conditions, stmt.get("Effect", "Allow"))

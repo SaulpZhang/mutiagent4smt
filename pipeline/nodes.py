@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
 from config import settings
-from core.schemas import SMTLibCode
+from core.schemas import Constraint, ConstraintsList, EvaluationResult, SMTLibCode
 from core.trace_logger import TraceLogger
 from modules.generation_module import GenerationModule
 from modules.evaluation_module import EvaluationModule
@@ -82,6 +83,18 @@ class PipelineNodes:
         except Exception as e:
             return {"extras": extras, "error_message": f"意图理解失败: {e}"}
 
+    async def mock_intent_node(self, state: dict) -> dict:
+        """非LLM约束生成：返回空约束列表，generate_smt_from_policy 自行推断
+
+        gen_only 消融模式下，A2直接基于IAM配置生成代码，不依赖预解析的约束。
+        """
+        input_data = state.get("input_data")
+        if not input_data:
+            return {"error_message": "缺少输入数据"}
+        extras = dict(state.get("extras", {}))
+        extras["gen_start_time"] = time.perf_counter()
+        return {"extras": extras, "constraints_list": ConstraintsList(constraints=[])}
+
     async def code_gen_node(self, state: dict) -> dict:
         """智能体二：ToolAgent 代码生成（ReAct 模式，LLM 自主选择工具）"""
         if state.get("error_message"):
@@ -154,7 +167,11 @@ class PipelineNodes:
         constraints = state.get("constraints_list")
         instruct_id = state.get("instruct_id", "unknown")
 
-        if not code or not evaluation:
+        # 消融实验无评估时使用空评估结果占位
+        if code and not evaluation:
+            evaluation = EvaluationResult(items=[], all_satisfied=True, summary="消融模式 — 无Agent3评估")
+
+        if not code:
             error_msg = state.get("error_message", "未知错误")
             output_result = output_module.generate_error_output(error_msg, instruct_id)
         else:
