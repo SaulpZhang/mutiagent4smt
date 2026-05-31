@@ -273,7 +273,9 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                         record.satisfied_count = ev_result.satisfied_count
                     if ver_result and label is not None:
                         z3_output = ver_result.execution_output.strip().lower()
-                        z3_has_permission = z3_output.startswith("sat")
+                        z3_has_permission = any(
+                            line.startswith("sat") for line in z3_output.split("\n")
+                        )
                         record.label_match = z3_has_permission == label
                         label_matches.append(record.label_match)
 
@@ -291,7 +293,9 @@ async def run_pipeline(args: argparse.Namespace) -> None:
                     match_str = ""
                     if ver_result and label is not None:
                         z3_output = ver_result.execution_output.strip().lower()
-                        z3_has_permission = z3_output.startswith("sat")
+                        z3_has_permission = any(
+                            line.startswith("sat") for line in z3_output.split("\n")
+                        )
                         label_match = z3_has_permission == label
                         match_str = " ✓" if label_match else " ✗"
                         match_str += f" (Z3={z3_output}, label={label})"
