@@ -439,8 +439,52 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
                 lines.append(f";;   - Condition {c_idx1+1} vs Condition {c_idx2+1}: {reason}")
         if date_past_only:
             lines.append(";; Date condition restricts to the past — unsatisfiable")
+
+        # Generate explicit contradiction checks instead of hardcoded false
+        not_contradictory_checks = []
+        for c_idx1, c_idx2, reason in contradictions:
+            if c_idx2 >= 0 and c_idx1 < len(conditions) and c_idx2 < len(conditions):
+                op1, key1, val1, _ = conditions[c_idx1]
+                op2, key2, val2, _ = conditions[c_idx2]
+                not_contradictory_checks.append(
+                    f"        (and\n"
+                    f"            ;; {reason}\n"
+                    f"            (= {pfx}_cond_{c_idx1+1}_operator {_smt_escape(str(op1))})\n"
+                    f"            (= {pfx}_cond_{c_idx1+1}_key {_smt_escape(str(key1))})\n"
+                    f"            (= {pfx}_cond_{c_idx1+1}_value {_smt_escape(str(val1))})\n"
+                    f"            (= {pfx}_cond_{c_idx2+1}_operator {_smt_escape(str(op2))})\n"
+                    f"            (= {pfx}_cond_{c_idx2+1}_key {_smt_escape(str(key2))})\n"
+                    f"            (= {pfx}_cond_{c_idx2+1}_value {_smt_escape(str(val2))})\n"
+                    f"        )"
+                )
+            elif c_idx1 < len(conditions):
+                op1, key1, val1, _ = conditions[c_idx1]
+                not_contradictory_checks.append(
+                    f"        (and\n"
+                    f"            ;; {reason}\n"
+                    f"            (= {pfx}_cond_{c_idx1+1}_operator {_smt_escape(str(op1))})\n"
+                    f"            (= {pfx}_cond_{c_idx1+1}_key {_smt_escape(str(key1))})\n"
+                    f"            (= {pfx}_cond_{c_idx1+1}_value {_smt_escape(str(val1))})\n"
+                    f"        )"
+                )
+
         lines.append(f"(define-fun {pfx}_condition_values_not_contradictory () Bool")
-        lines.append("    false  ;; contradictory/unsatisfiable conditions detected")
+        if date_past_only and not not_contradictory_checks:
+            # Only date_past, no detectable contradictions to express in SMT
+            lines.append("    false  ;; date condition restricts to the past")
+        elif date_past_only:
+            # date_past intrinsically unsatisfiable — false dominates
+            lines.append("    false  ;; date condition restricts to the past")
+        else:
+            if len(not_contradictory_checks) == 1:
+                lines.append(f"    (not")
+                lines.append(not_contradictory_checks[0])
+                lines.append(f"    )")
+            else:
+                lines.append(f"    (not (or")
+                for check in not_contradictory_checks:
+                    lines.append(check)
+                lines.append(f"    ))")
         lines.append(")")
 
     # Statement-level valid (AND of all checks)
