@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     max_syntax_retries: int = 5
 
     # Data paths
-    data_dir: str = str(Path(__file__).parent / "valid_permission")
+    data_dir: str = str(Path(__file__).parent / "dataset" / "valid_permission")
     experiments_dir: str = str(Path(__file__).parent / "data")
     db_path: str = str(Path(__file__).parent / "data" / "experiments.db")
 

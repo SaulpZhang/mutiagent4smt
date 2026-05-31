@@ -171,7 +171,7 @@ class SkillAgent:
                 name = getattr(msg, "name", "") if hasattr(msg, "name") else ""
                 if name == extract_tool:
                     content = msg.content.strip() if msg.content else ""
-                    if content and not content.startswith("错误"):
+                    if content:
                         return content
 
         # 回退：取最后一个有内容的 LLM 回复

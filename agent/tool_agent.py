@@ -81,7 +81,7 @@ class ToolAgent:
         # 执行 ReAct 循环
         result = await self._agent.run(
             user_message=user_content,
-            extract_tool="build_smt_model",
+            extract_tool="extract_smt_code",
             trace_logger=trace_logger,
         )
 

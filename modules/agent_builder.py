@@ -20,12 +20,7 @@ class AgentBuilder:
 
     CODE_GEN_SKILL_NAMES = [
         "generate_smt_from_policy",
-        "build_smt_model",
-        "build_smt_expr",
-        "check_type_compatibility",
-        "build_type_check_smt",
-        "check_condition_semantics",
-        "build_condition_constraint",
+        "extract_smt_code",
     ]
 
     def __init__(self, scenario_name: str) -> None:
@@ -70,8 +65,6 @@ class AgentBuilder:
     def build_intent_agent(self) -> IntentUnderstandingAgent:
         skills = self._registry.get_skills([
             "parse_iam_config",
-            "check_type_compatibility",
-            "check_condition_semantics",
         ])
         tool_descriptions = self._render_tool_descriptions(skills)
         system_prompt = self.prompt_manager.load_system_prompt(
