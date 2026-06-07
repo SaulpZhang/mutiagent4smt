@@ -65,6 +65,7 @@ class PipelineNodes:
 
     async def intent_agent_node(self, state: dict) -> dict:
         """智能体一：意图理解生成约束列表"""
+        t0 = time.perf_counter()
         gen_module: GenerationModule = self._get("generation")
         input_data = state.get("input_data")
         if not input_data:
@@ -73,14 +74,19 @@ class PipelineNodes:
         extras["gen_start_time"] = time.perf_counter()
 
         self._loggers["agent1"].log_separator("意图理解 — 约束生成")
+        print(f"  [timing] A1 意图理解 开始")
 
         try:
             constraints = await gen_module.run_intent_analysis(
                 input_data,
                 trace_logger=self._loggers["agent1"],
             )
+            elapsed = time.perf_counter() - t0
+            print(f"  [timing] A1 意图理解 完成 ({elapsed:.1f}s)")
             return {"extras": extras, "constraints_list": constraints}
         except Exception as e:
+            elapsed = time.perf_counter() - t0
+            print(f"  [timing] A1 意图理解 失败 ({elapsed:.1f}s): {e}")
             return {"extras": extras, "error_message": f"意图理解失败: {e}"}
 
     async def mock_intent_node(self, state: dict) -> dict:
@@ -97,6 +103,7 @@ class PipelineNodes:
 
     async def code_gen_node(self, state: dict) -> dict:
         """智能体二：ToolAgent 代码生成（ReAct 模式，LLM 自主选择工具）"""
+        t0 = time.perf_counter()
         if state.get("error_message"):
             return {}
 
@@ -115,8 +122,10 @@ class PipelineNodes:
         # 对话式日志：迭代分隔
         if iteration > 0:
             trace_logger.log_separator(f"Code Generation — Iteration {iteration}（反馈修正）")
+            print(f"  [timing] A2 代码生成 开始 (iter {iteration})")
         else:
             trace_logger.log_separator("Code Generation — 初始生成")
+            print(f"  [timing] A2 代码生成 开始 (首次)")
 
         try:
             if iteration > 0 and evaluation:
@@ -130,12 +139,17 @@ class PipelineNodes:
                 result = await gen_module.run_code_generation(
                     input_data, constraints, trace_logger=trace_logger,
                 )
+            elapsed = time.perf_counter() - t0
+            print(f"  [timing] A2 代码生成 完成 ({elapsed:.1f}s)")
             return {"smt_code": result, "extras": extras}
         except Exception as e:
+            elapsed = time.perf_counter() - t0
+            print(f"  [timing] A2 代码生成 失败 ({elapsed:.1f}s): {e}")
             return {"error_message": f"代码生成失败: {e}"}
 
     async def evaluate_node(self, state: dict) -> dict:
         """智能体三：语义评估"""
+        t0 = time.perf_counter()
         if state.get("error_message"):
             return {}
 
@@ -150,13 +164,19 @@ class PipelineNodes:
 
         # 对话式日志：评估分隔
         self._loggers["agent3"].log_separator(f"Evaluation — Iteration {iteration}")
+        print(f"  [timing] A3 评估 开始 (iter {iteration})")
 
         try:
             result = await eval_module.evaluate(
                 code, constraints, trace_logger=self._loggers["agent3"], iteration=iteration,
             )
+            elapsed = time.perf_counter() - t0
+            satisfied = f"{result.satisfied_count}/{len(result.items)}" if result.items else "?"
+            print(f"  [timing] A3 评估 完成 ({elapsed:.1f}s, 满足: {satisfied})")
             return {"evaluation_result": result, "iteration": iteration + 1}
         except Exception as e:
+            elapsed = time.perf_counter() - t0
+            print(f"  [timing] A3 评估 失败 ({elapsed:.1f}s): {e}")
             return {"error_message": f"评估失败: {e}", "iteration": iteration + 1}
 
     async def output_node(self, state: dict) -> dict:

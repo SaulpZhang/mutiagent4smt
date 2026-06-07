@@ -21,6 +21,8 @@ class AgentBuilder:
     CODE_GEN_SKILL_NAMES = [
         "generate_smt_from_policy",
         "extract_smt_code",
+        "check_type_compatibility",
+        "check_condition_semantics",
     ]
 
     def __init__(self, scenario_name: str) -> None:

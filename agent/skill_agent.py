@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -112,10 +113,13 @@ class SkillAgent:
             trace_logger.log_message("user", user_message)
 
         print(f"  [{self.name}] 启动 ReAct（最大 {self.max_steps} 步）")
+        react_start = time.perf_counter()
         print(f"  ── ReAct Trace ──")
         collected: list = []
         seen_ids: set[int] = set()  # 以 id(msg) 去重，应对 LangGraph 流式事件结构
         react_step = 0
+        llm_call_count = 0
+        tool_call_count = 0
 
         async for event in agent.astream(
             {"messages": messages},
@@ -134,6 +138,7 @@ class SkillAgent:
                         continue
 
                     if node_name == "agent" and isinstance(msg, AIMessage):
+                        llm_call_count += 1
                         if msg.tool_calls:
                             for tc in msg.tool_calls:
                                 args_str = json.dumps(tc["args"], ensure_ascii=False)[:300]
@@ -150,6 +155,7 @@ class SkillAgent:
                             if trace_logger:
                                 trace_logger.log_message("assistant", c, step=react_step)
                     elif node_name == "tools":
+                        tool_call_count += 1
                         c = msg.content.strip() if msg.content else ""
                         if len(c) > 150:
                             print(f"  [{react_step}] 工具 {msg.name}: {len(c)} 字符")
@@ -161,7 +167,8 @@ class SkillAgent:
 
         self._last_messages = collected
         result = self._extract_result(collected, extract_tool)
-        print(f"  [{self.name}] 结束（{react_step} 步）")
+        react_elapsed = time.perf_counter() - react_start
+        print(f"  [{self.name}] 结束 ({react_step} 步, {react_elapsed:.1f}s, LLM={llm_call_count}次, 工具={tool_call_count}次)")
         return result
 
     def _extract_result(self, messages: list, extract_tool: str | None = None) -> str:

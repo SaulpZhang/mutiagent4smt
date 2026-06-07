@@ -326,6 +326,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
             except Exception as e:
                 print(f"  [!] {case.instruct_id} 保存失败: {e}")
 
+        await asyncio.sleep(60)
         return result
 
     # 并行处理所有用例

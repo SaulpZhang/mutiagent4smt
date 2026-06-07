@@ -166,6 +166,7 @@ class LLMClient:
                 elapsed_ms = (time.perf_counter() - request_start) * 1000
                 content = response.content if hasattr(response, "content") else str(response)
                 result = content.strip()
+                print(f"  [LLM] {self.model_name} 响应 ({elapsed_ms:.0f}ms)")
 
                 if json_output and result:
                     try:
