@@ -96,6 +96,27 @@ class AgentBuilder:
             max_steps=20,
         )
 
+    CODE_FIX_SKILL_NAMES = [
+        "apply_smt_fix",
+        "extract_smt_code",
+    ]
+
+    def build_fix_agent(self) -> ToolAgent:
+        skills = self._registry.get_skills(self.CODE_FIX_SKILL_NAMES)
+        tool_descriptions = self._render_tool_descriptions(skills)
+        system_prompt = self.prompt_manager.load_system_prompt(
+            "fix", tool_descriptions=tool_descriptions,
+        )
+        return ToolAgent(
+            name="code_fix",
+            llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.0),
+            skills=skills,
+            system_prompt=system_prompt,
+            prompt_manager=self.prompt_manager,
+            max_steps=10,
+            prompt_key="fix",
+        )
+
     def build_eval_agent(self) -> EvaluationAgent:
         skills = self._registry.get_skills([
             "run_z3_check",

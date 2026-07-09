@@ -53,3 +53,7 @@ record/
 
 cot_smt
 cot_smt/*
+
+experiments/
+
+docs/

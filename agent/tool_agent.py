@@ -26,11 +26,13 @@ class ToolAgent:
         system_prompt: str,
         prompt_manager: PromptManager,
         max_steps: int = 20,
+        prompt_key: str = "2",
     ) -> None:
         self.name = name
         self._agent = SkillAgent(name, llm_client, skills, system_prompt, max_steps)
         self.system_prompt = system_prompt
         self._prompt_manager = prompt_manager
+        self.prompt_key = prompt_key
 
     async def run(
         self,
@@ -38,6 +40,7 @@ class ToolAgent:
         constraints_json: str = "",
         account_data: dict | None = None,
         evaluation_feedback: EvaluationResult | None = None,
+        original_code: str = "",
         trace_logger=None,
     ) -> SMTLibCode:
         """运行代码生成 ReAct 循环"""
@@ -65,9 +68,9 @@ class ToolAgent:
                 f"请根据以上反馈针对性修正代码，不要完全推倒重来。"
             )
 
-        # 从 agent2.md 加载 user prompt
+        # 从对应的 prompt 文件加载 user prompt
         _, user_content = pm.load_agent_prompt(
-            "2",
+            self.prompt_key,
             feedback_section=feedback_section,
             instruction=prompt,
             account_data=(
@@ -76,6 +79,7 @@ class ToolAgent:
                 else ""
             ),
             constraints_list=constraints_json,
+            original_code=original_code,
         )
 
         # 执行 ReAct 循环

@@ -41,11 +41,13 @@ class PipelineNodes:
 
         # Agent 2: ToolAgent（LLM 自主选择编译器或 Z3 Python）
         tool_agent = agent_builder.build_tool_code_gen_agent()
+        fix_agent = agent_builder.build_fix_agent()
 
         self._modules["generation"] = GenerationModule(
             intent_agent=agent_builder.build_intent_agent(),
             prompt_manager=prompt_manager,
             tool_agent=tool_agent,
+            fix_agent=fix_agent,
         )
         self._modules["evaluation"] = EvaluationModule(
             evaluation_agent=agent_builder.build_eval_agent(),
@@ -129,11 +131,12 @@ class PipelineNodes:
 
         try:
             if iteration > 0 and evaluation:
-                result = await gen_module.run_code_generation(
-                    input_data, constraints,
+                original_code = state.get("smt_code")
+                original_str = original_code.code if hasattr(original_code, 'code') else str(original_code) if original_code else ""
+                result = await gen_module.run_code_fix(
+                    original_code=original_str,
                     evaluation_feedback=evaluation,
                     trace_logger=trace_logger,
-                    iteration=iteration,
                 )
             else:
                 result = await gen_module.run_code_generation(

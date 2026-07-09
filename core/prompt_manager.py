@@ -44,6 +44,7 @@ class PromptManager:
         "3": "eval.md",
         "agent3": "eval.md",
         "eval": "eval.md",
+        "fix": "fix_code.md",
     }
 
     def load_agent_prompt(

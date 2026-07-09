@@ -20,10 +20,12 @@ class GenerationModule:
         intent_agent: BaseAgent,
         prompt_manager: PromptManager,
         tool_agent: ToolAgent | None = None,
+        fix_agent: ToolAgent | None = None,
     ) -> None:
         self.intent_agent = intent_agent
         self.prompt_manager = prompt_manager
         self.tool_agent = tool_agent
+        self.fix_agent = fix_agent
 
     async def run_intent_analysis(
         self,
@@ -72,6 +74,25 @@ class GenerationModule:
             constraints_json=constraints_json,
             account_data=input_data.account_data,
             evaluation_feedback=evaluation_feedback,
+            trace_logger=trace_logger,
+        )
+        return result
+
+    async def run_code_fix(
+        self,
+        original_code: str,
+        evaluation_feedback: EvaluationResult,
+        trace_logger: TraceLogger | None = None,
+    ) -> SMTLibCode:
+        """使用 fix agent 定向修复代码"""
+        if self.fix_agent is None:
+            raise RuntimeError("需要 fix_agent，但未构建")
+
+        result = await self.fix_agent.run(
+            prompt="",
+            constraints_json="",
+            evaluation_feedback=evaluation_feedback,
+            original_code=original_code,
             trace_logger=trace_logger,
         )
         return result
