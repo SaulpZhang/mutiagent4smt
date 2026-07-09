@@ -81,6 +81,8 @@ class GenerationModule:
     async def run_code_fix(
         self,
         original_code: str,
+        input_data: VerificationInput,
+        constraints: ConstraintsList,
         evaluation_feedback: EvaluationResult,
         trace_logger: TraceLogger | None = None,
     ) -> SMTLibCode:
@@ -90,7 +92,12 @@ class GenerationModule:
 
         result = await self.fix_agent.run(
             prompt="",
-            constraints_json="",
+            constraints_json=(
+                constraints.model_dump_json()
+                if hasattr(constraints, "model_dump_json")
+                else str(constraints)
+            ),
+            account_data=input_data.account_data,
             evaluation_feedback=evaluation_feedback,
             original_code=original_code,
             trace_logger=trace_logger,

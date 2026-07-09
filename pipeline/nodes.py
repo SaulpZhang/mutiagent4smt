@@ -135,6 +135,8 @@ class PipelineNodes:
                 original_str = original_code.code if hasattr(original_code, 'code') else str(original_code) if original_code else ""
                 result = await gen_module.run_code_fix(
                     original_code=original_str,
+                    input_data=input_data,
+                    constraints=constraints,
                     evaluation_feedback=evaluation,
                     trace_logger=trace_logger,
                 )

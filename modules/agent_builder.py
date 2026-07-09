@@ -97,6 +97,9 @@ class AgentBuilder:
         )
 
     CODE_FIX_SKILL_NAMES = [
+        "generate_smt_from_policy",
+        "check_type_compatibility",
+        "check_condition_semantics",
         "apply_smt_fix",
         "extract_smt_code",
     ]
