@@ -38,13 +38,13 @@ class AgentBuilder:
             / "resources"
             / "scenarios"
             / self.scenario_name
-            / "skill"
+            / "tools"
         )
         return SkillRegistry(skills_dir)
 
     def _build_client(self, model_name: str) -> LLMClient:
         actual_model = model_name or settings.common_model or settings.model_name
-        return LLMClient(model_name=actual_model)
+        return LLMClient(model_name=actual_model, temperature=0.3)
 
     def _build_client_no_thinking(self, model_name: str, temperature: float | None = None) -> LLMClient:
         actual_model = model_name or settings.common_model or settings.model_name
@@ -55,24 +55,12 @@ class AgentBuilder:
             reasoning_effort="",
         )
 
-    def _render_tool_descriptions(self, skills: list) -> str:
-        """生成工具描述文本（用于 agent2.md 的 {{tool_descriptions}}）"""
-        lines = []
-        for s in skills:
-            props = s.parameters.get("properties", {})
-            param_str = ", ".join(f"{n}({p.get('type', '?')})" for n, p in props.items())
-            lines.append(f"- **{s.name}({param_str})**: {s.description}")
-        return "\n".join(lines)
-
     def build_intent_agent(self) -> IntentUnderstandingAgent:
         skills = self._registry.get_skills([
             "parse_iam_config",
             "extract_intent_json",
         ])
-        tool_descriptions = self._render_tool_descriptions(skills)
-        system_prompt = self.prompt_manager.load_system_prompt(
-            "1", tool_descriptions=tool_descriptions,
-        )
+        system_prompt = self.prompt_manager.load_system_prompt("1")
         return IntentUnderstandingAgent(
             name="intent_understanding",
             system_prompt=system_prompt,
@@ -83,13 +71,10 @@ class AgentBuilder:
 
     def build_tool_code_gen_agent(self) -> ToolAgent:
         skills = self._registry.get_skills(self.CODE_GEN_SKILL_NAMES)
-        tool_descriptions = self._render_tool_descriptions(skills)
-        system_prompt = self.prompt_manager.load_system_prompt(
-            "2", tool_descriptions=tool_descriptions,
-        )
+        system_prompt = self.prompt_manager.load_system_prompt("2")
         return ToolAgent(
             name="code_gen_tools",
-            llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.0),
+            llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.3),
             skills=skills,
             system_prompt=system_prompt,
             prompt_manager=self.prompt_manager,
@@ -106,13 +91,10 @@ class AgentBuilder:
 
     def build_fix_agent(self) -> ToolAgent:
         skills = self._registry.get_skills(self.CODE_FIX_SKILL_NAMES)
-        tool_descriptions = self._render_tool_descriptions(skills)
-        system_prompt = self.prompt_manager.load_system_prompt(
-            "fix", tool_descriptions=tool_descriptions,
-        )
+        system_prompt = self.prompt_manager.load_system_prompt("fix")
         return ToolAgent(
             name="code_fix",
-            llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.0),
+            llm_client=self._build_client_no_thinking(settings.agent_2_model, temperature=0.3),
             skills=skills,
             system_prompt=system_prompt,
             prompt_manager=self.prompt_manager,
@@ -126,10 +108,7 @@ class AgentBuilder:
             "check_type_compatibility",
             "check_condition_semantics",
         ])
-        tool_descriptions = self._render_tool_descriptions(skills)
-        system_prompt = self.prompt_manager.load_system_prompt(
-            "3", tool_descriptions=tool_descriptions,
-        )
+        system_prompt = self.prompt_manager.load_system_prompt("3")
         return EvaluationAgent(
             name="evaluation",
             system_prompt=system_prompt,

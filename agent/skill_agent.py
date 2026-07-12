@@ -59,6 +59,24 @@ class SkillAgent:
     def _build_langchain_tool(self, skill: SkillDef) -> StructuredTool:
         """将单个 SkillDef 转为 LangChain StructuredTool"""
         import functools
+        from pydantic import Field, create_model
+
+        params = skill.parameters or {}
+        props = params.get("properties", {})
+        required = params.get("required", [])
+
+        # 由 JSON Schema 通过 create_model 生成 Pydantic model
+        fields = {}
+        for pname, pdef in props.items():
+            ptype = pdef.get("type", "string")
+            pdesc = pdef.get("description", "")
+            py_type = str if ptype != "boolean" else bool
+            if pname in required:
+                fields[pname] = (py_type, Field(description=pdesc))
+            else:
+                fields[pname] = (py_type, Field(default="", description=pdesc))
+
+        ArgsModel = create_model(f"{skill.name}_args", **fields)
 
         @functools.wraps(skill.fn)
         def wrapped(**kwargs: Any) -> str:
@@ -74,6 +92,7 @@ class SkillAgent:
             name=skill.name,
             description=skill.description[:1024],
             func=wrapped,
+            args_schema=ArgsModel,
         )
 
     def _build_langchain_tools(self) -> list[StructuredTool]:
@@ -107,16 +126,27 @@ class SkillAgent:
             HumanMessage(content=user_message),
         ]
 
-        # 对话式日志：记录初始 system + user
+        # 对话式日志：记录初始 system + user + tools
         if trace_logger:
-            trace_logger.log_message("system", self.system_prompt)
-            trace_logger.log_message("user", user_message)
+            trace_logger.set_tools([
+                {
+                    "name": s.name,
+                    "description": s.description[:200],
+                    "parameters": s.parameters,
+                }
+                for s in self.skills.values()
+            ])
+            trace_logger.add_message("system", self.system_prompt)
+            trace_logger.add_message("user", user_message)
 
         print(f"  [{self.name}] 启动 ReAct（最大 {self.max_steps} 步）")
         react_start = time.perf_counter()
         print(f"  ── ReAct Trace ──")
+        print(f"  [0] SystemMessage: {self.system_prompt}")
+        print(f"  [0] HumanMessage: {user_message}")
         collected: list = []
-        seen_ids: set[int] = set()  # 以 id(msg) 去重，应对 LangGraph 流式事件结构
+        seen_ids: set[int] = set()
+        self._pending_tool_ids: list[str] = []
         react_step = 0
         llm_call_count = 0
         tool_call_count = 0
@@ -133,39 +163,49 @@ class SkillAgent:
                     seen_ids.add(id(msg))
                     collected.append(msg)
 
-                    # 已单独记录的初始消息不再重复
+                    # 初始消息已单独记录
                     if isinstance(msg, (SystemMessage, HumanMessage)):
                         continue
 
                     if node_name == "agent" and isinstance(msg, AIMessage):
                         llm_call_count += 1
                         if msg.tool_calls:
+                            tool_calls_data = []
                             for tc in msg.tool_calls:
-                                args_str = json.dumps(tc["args"], ensure_ascii=False)[:300]
-                                print(f"  [{react_step}] LLM → {tc['name']}({args_str})")
-                            calls = ", ".join(f"{tc['name']}(...)" for tc in msg.tool_calls)
-                            log_content = f"[tool_calls: {calls}]"
-                            if msg.content and msg.content.strip():
-                                log_content = msg.content.strip() + "\n" + log_content
+                                tc_id = tc.get("id", f"call_{tc['name']}_{react_step}")
+                                tool_calls_data.append({
+                                    "id": tc_id,
+                                    "name": tc["name"],
+                                    "args": tc["args"],
+                                })
+                                args_str = json.dumps(tc["args"], ensure_ascii=False)
+                                print(f"  [{react_step}] AIMessage[tool_calls]: {tc['name']}({args_str})")
                             if trace_logger:
-                                trace_logger.log_message("assistant", log_content, step=react_step)
+                                trace_logger.add_message(
+                                    "assistant",
+                                    content=msg.content.strip() if msg.content and msg.content.strip() else None,
+                                    tool_calls=tool_calls_data,
+                                )
+                                self._pending_tool_ids = [tc["id"] for tc in tool_calls_data]
                         elif msg.content and msg.content.strip():
                             c = msg.content.strip()
-                            print(f"  [{react_step}] LLM: {c}")
+                            print(f"  [{react_step}] AIMessage: {c}")
                             if trace_logger:
-                                trace_logger.log_message("assistant", c, step=react_step)
+                                trace_logger.add_message("assistant", c)
                     elif node_name == "tools":
                         tool_call_count += 1
                         c = msg.content.strip() if msg.content else ""
-                        if len(c) > 150:
-                            print(f"  [{react_step}] 工具 {msg.name}: {len(c)} 字符")
-                        else:
-                            print(f"  [{react_step}] 工具 {msg.name}: {c}")
-                        if trace_logger and c:
-                            trace_logger.log_message(f"tool.{msg.name}", c, step=react_step)
+                        print(f"  [{react_step}] ToolMessage({msg.name}): {c}")
+                        if trace_logger:
+                            tool_call_id = getattr(msg, "tool_call_id", "")
+                            if not tool_call_id and hasattr(self, "_pending_tool_ids") and self._pending_tool_ids:
+                                tool_call_id = self._pending_tool_ids.pop(0)
+                            trace_logger.add_message("tool", c, tool_name=msg.name, tool_call_id=tool_call_id)
             react_step += 1
 
         self._last_messages = collected
+        if trace_logger:
+            trace_logger.flush()
         result = self._extract_result(collected, extract_tool)
         react_elapsed = time.perf_counter() - react_start
         print(f"  [{self.name}] 结束 ({react_step} 步, {react_elapsed:.1f}s, LLM={llm_call_count}次, 工具={tool_call_count}次)")

@@ -1,0 +1,24 @@
+{
+  "type": "function",
+  "function": {
+    "name": "apply_smt_fix",
+    "description": "# apply_smt_fix\n\n验证修复后的 SMT-LIB V2 代码是否能通过 Z3 执行。用于反馈循环中验证修复是否正确。\n\n## 何时使用\n在根据评估反馈修改代码后，调用此工具验证修改后的代码语法正确且 Z3 可执行。\n\n## 参数\n- `patched_code`: 修复后的完整 SMT-LIB V2 代码\n- `fix_description`: 修复内容的简要描述\n\n## 返回\nZ3 执行结果（sat / unsat / 语法错误）",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "patched_code": {
+          "type": "string",
+          "description": "修复后的完整 SMT-LIB V2 代码"
+        },
+        "fix_description": {
+          "type": "string",
+          "description": "修复内容的简要描述"
+        }
+      },
+      "required": [
+        "patched_code",
+        "fix_description"
+      ]
+    }
+  }
+}

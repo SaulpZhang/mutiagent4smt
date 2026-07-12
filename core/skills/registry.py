@@ -7,11 +7,11 @@ from core.skills.base import SkillDef
 
 
 class SkillRegistry:
-    """Skill 注册中心：从场景 skill 目录自动发现 skill
+    """Skill 注册中心：从场景 tools 目录自动发现 tool
 
-    每个 skill 是一个子目录，包含:
-    - skill.md: LLM 可读的描述文档
-    - tool.py: 实现文件，必须导出 execute() 函数和 PARAMETERS 字典
+    每个 tool 是一个子目录，包含:
+    - tool.json: OpenAI function-calling 格式的工具定义
+    - tool.py: 实现文件，必须导出 execute() 函数
     """
 
     def __init__(self, skills_dir: str | Path | None = None) -> None:
@@ -30,12 +30,20 @@ class SkillRegistry:
 
     def _load_skill(self, skill_dir: Path) -> None:
         name = skill_dir.name
-        md_file = skill_dir / "skill.md"
         tool_file = skill_dir / "tool.py"
-        if not md_file.exists() or not tool_file.exists():
+        tool_json_file = skill_dir / "tool.json"
+        if not tool_file.exists():
             return
 
-        description = md_file.read_text(encoding="utf-8").strip()
+        # 从 tool.json 读取 description
+        description = name
+        import json
+        if tool_json_file.exists():
+            try:
+                tool_def = json.loads(tool_json_file.read_text(encoding="utf-8"))
+                description = tool_def.get("function", {}).get("description", name)
+            except (json.JSONDecodeError, KeyError):
+                pass
 
         try:
             spec = importlib.util.spec_from_file_location(f"skills_{name}", tool_file)
@@ -51,7 +59,15 @@ class SkillRegistry:
             print(f"  [SkillRegistry] '{name}' 缺少 execute() 函数")
             return
 
-        params = getattr(module, "PARAMETERS", {"type": "object", "properties": {}})
+        # 从 tool.json 读取参数定义
+        params = {"type": "object", "properties": {}}
+        if tool_json_file.exists():
+            try:
+                tool_def = json.loads(tool_json_file.read_text(encoding="utf-8"))
+                params = tool_def.get("function", {}).get("parameters", params)
+            except (json.JSONDecodeError, KeyError):
+                pass
+
         self._skills[name] = SkillDef(
             name=name,
             description=description,

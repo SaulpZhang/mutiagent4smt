@@ -1,0 +1,24 @@
+{
+  "type": "function",
+  "function": {
+    "name": "generate_smt_from_policy",
+    "description": "# generate_smt_from_policy\n\n根据IAM配置和约束列表，程序化生成语法正确的完整SMT-LIB V2代码。\n\n## 参数\n- `account_data`: IAM配置JSON字符串（含buckets或agencies字段）\n- `constraints`: 约束列表JSON字符串（含constraints数组，每项有id/description/category）\n\n## 返回\n完整SMT-LIB V2代码（含declare-const、assert、define-fun、check-sat、exit）\n\n## 说明\n此工具实现了经过验证的代码生成逻辑，准确率高于LLM手写SMT代码。对于它能处理的用例，应优先使用此工具。当配置过于复杂（如空条件值、交叉键条件）时，工具会返回错误，此时请回退到build_smt_model等工具手动构造。\n\n## 工作流程\n1. 解析IAM配置中的Policy JSON（Statement数组）\n2. 根据约束列表确定需要验证的字段（Effect/Action/Principal/Condition）\n3. 为每个Statement声明SMT变量\n4. 断言配置中的实际字段值\n5. 生成验证函数（存在性、值合规性、操作符-键类型兼容性、语义矛盾检测）\n6. 处理多Statement场景（Allow+Deny混合时进行交叉分析）\n7. 组装完整SMT代码",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "account_data": {
+          "type": "string",
+          "description": "IAM配置JSON字符串（含buckets或agencies字段的完整account_data）"
+        },
+        "constraints": {
+          "type": "string",
+          "description": "约束列表JSON字符串（含constraints数组，每项有id/description/category）"
+        }
+      },
+      "required": [
+        "account_data",
+        "constraints"
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "function": {
+    "name": "parse_iam_config",
+    "description": "# parse_iam_config\n\n解析IAM策略配置JSON，提取Statement、Effect、Action、Principal、Condition等结构化信息。输出结构化的策略摘要，帮助理解IAM配置内容。\n\n## 何时使用\n当需要分析IAM配置时使用。输入原始IAM配置JSON字符串，返回结构化的策略分析结果。\n\n## 参数\n- `config_json`: IAM配置的原始JSON字符串\n\n## 返回\n结构化IAM策略摘要，包含策略类型、每个Statement的Effect、Action列表、Principal信息、Condition详情。",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "config_json": {
+          "type": "string",
+          "description": "IAM配置JSON字符串"
+        }
+      },
+      "required": [
+        "config_json"
+      ]
+    }
+  }
+}

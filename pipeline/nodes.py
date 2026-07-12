@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Any
 
 from config import settings
@@ -133,12 +134,15 @@ class PipelineNodes:
             if iteration > 0 and evaluation:
                 original_code = state.get("smt_code")
                 original_str = original_code.code if hasattr(original_code, 'code') else str(original_code) if original_code else ""
+                # 每次 feedback 使用独立的 trace logger
+                fix_instruct_id = state.get("instruct_id", "unknown")
+                fix_logger = TraceLogger(self.run_id, f"fix_iter{iteration}", case_id=fix_instruct_id)
                 result = await gen_module.run_code_fix(
                     original_code=original_str,
                     input_data=input_data,
                     constraints=constraints,
                     evaluation_feedback=evaluation,
-                    trace_logger=trace_logger,
+                    trace_logger=fix_logger,
                 )
             else:
                 result = await gen_module.run_code_generation(
@@ -178,6 +182,17 @@ class PipelineNodes:
             elapsed = time.perf_counter() - t0
             satisfied = f"{result.satisfied_count}/{len(result.items)}" if result.items else "?"
             print(f"  [timing] A3 评估 完成 ({elapsed:.1f}s, 满足: {satisfied})")
+
+            # 保存 A3 评估结果到单独 JSON 文件
+            import json as _json
+            instruct_id = state.get("instruct_id", "unknown")
+            eval_path = Path("data") / self.run_id / "log" / instruct_id / f"evaluation_iter{iteration}.json"
+            eval_path.parent.mkdir(parents=True, exist_ok=True)
+            eval_path.write_text(
+                result.model_dump_json(indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
             return {"evaluation_result": result, "iteration": iteration + 1}
         except Exception as e:
             elapsed = time.perf_counter() - t0

@@ -1,0 +1,24 @@
+{
+  "type": "function",
+  "function": {
+    "name": "check_type_compatibility",
+    "description": "# check_type_compatibility\n\n检查IAM条件操作符与条件键的类型兼容性（编译期检查）。\n\n## 参数\n- `operator`: IAM条件操作符，如 numericequals、stringequals、dateequals、bool、ipaddress、null。支持multi-value前缀（如 forallvalues:stringequals）\n- `condition_key`: IAM条件键，如 g:PrincipalAccount、g:SourceIp、g:CurrentTime、g:MFAPresent 等\n\n## 返回\n- `\"true\"`: 类型兼容\n- `\"false\"`: 类型不兼容——必须将\"false\"放入 build_smt_model 的 constraints 数组（勿作为 assignment value 使用），constraints 中的 false 被包装为 (assert false) 使 Z3 模型 UNSAT",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "operator": {
+          "type": "string",
+          "description": "IAM条件操作符，如 numericequals、stringequals、dateequals、bool、ipaddress、null。支持multi-value前缀（如 forallvalues:stringequals）"
+        },
+        "condition_key": {
+          "type": "string",
+          "description": "IAM条件键，如 g:PrincipalAccount、g:SourceIp、g:CurrentTime、g:MFAPresent 等"
+        }
+      },
+      "required": [
+        "operator",
+        "condition_key"
+      ]
+    }
+  }
+}
