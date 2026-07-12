@@ -98,7 +98,7 @@ class AgentBuilder:
             skills=skills,
             system_prompt=system_prompt,
             prompt_manager=self.prompt_manager,
-            max_steps=10,
+            max_steps=20,
             prompt_key="fix",
         )
 

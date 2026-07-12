@@ -46,29 +46,10 @@ class ToolAgent:
         """运行代码生成 ReAct 循环"""
         pm = self._prompt_manager
 
-        # 构建反馈文本（首次调用为空，后续迭代注入）
+        # 构建反馈文本
         feedback_section = ""
         if evaluation_feedback:
-            feedback = evaluation_feedback
-            unsatisfied = [it for it in feedback.items if it.status == "not_satisfied"]
-            unsat_text = (
-                "\n".join(
-                    f"  - {it.constraint_id}: {it.reason}" for it in unsatisfied
-                )
-                if unsatisfied
-                else "  无（全部满足）"
-            )
-            trace = self._agent.get_last_trace() if self._agent._last_messages else ""
-            feedback_section = (
-                f"## 上一轮生成的代码\n\n"
-                f"{original_code or '(无)'}\n\n"
-                f"{f'## 上一轮 ReAct 记录\n\n{trace}\n\n' if trace else ''}"
-                f"## 评估反馈\n\n"
-                f"已满足：{feedback.satisfied_count}/{len(feedback.items)}\n\n"
-                f"未满足详情：\n{unsat_text}\n\n"
-                f"---\n\n"
-                f"请根据评估反馈针对性修改代码，保留正确部分。"
-            )
+            feedback_section = evaluation_feedback.model_dump_json(indent=2, ensure_ascii=False)
 
         # 从对应的 prompt 文件加载 user prompt
         _, user_content = pm.load_agent_prompt(
