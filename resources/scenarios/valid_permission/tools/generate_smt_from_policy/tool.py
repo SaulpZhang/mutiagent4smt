@@ -419,12 +419,16 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
         lines.append(f"(define-fun {pfx}_condition_exists () Bool {pfx}_has_condition)")
 
     # Condition value non-empty (empty values make condition unsatisfiable)
-    if has_condition_block and conditions and ("condition_value_nonempty" in needed or "cond_1_value_nonempty" in needed):
+    if has_condition_block and conditions:
+        needs_cond_check = ("condition_value_nonempty" in needed or "cond_1_value_nonempty" in needed)
         for ci, (op, key, val, _) in enumerate(conditions):
             c_idx = ci + 1
-            lines.append(f"(define-fun {pfx}_cond_{c_idx}_value_nonempty () Bool")
-            lines.append(f"    (=> {pfx}_has_condition (not (= {pfx}_cond_{c_idx}_value \"\"))))")
-            break  # only one condition value non-empty check needed for now
+            check_tag = f"cond_{c_idx}_value_nonempty"
+            # Add all cond_N_value_nonempty tags to needed
+            if needs_cond_check:
+                needed.add(check_tag)
+                lines.append(f"(define-fun {pfx}_{check_tag} () Bool")
+                lines.append(f"    (=> {pfx}_has_condition (not (= {pfx}_cond_{c_idx}_value \"\"))))")
 
     # Null condition valid
     if "null_condition_valid" in needed:
@@ -521,6 +525,12 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
                 if tag == "condition_exists" and "Condition" not in stmt:
                     continue
                 check_fns.append(f"{pfx}_{tag}")
+        # 动态添加所有 cond_N_value_nonempty 检查
+        for tag in sorted(needed):
+            if tag.startswith("cond_") and tag.endswith("_value_nonempty") and tag not in [
+                "cond_1_value_nonempty"]:
+                if tag not in [t for t in check_fns]:
+                    check_fns.append(f"{pfx}_{tag}")
         if contradictions or date_past_only:
             check_fns.append(f"{pfx}_condition_values_not_contradictory")
         if check_fns:
