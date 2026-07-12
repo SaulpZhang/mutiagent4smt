@@ -37,7 +37,6 @@ class PipelineNodes:
         self._loggers: dict[str, TraceLogger] = {
             "agent1": TraceLogger(run_id, "agent1", case_id=instruct_id),
             "agent2": TraceLogger(run_id, "agent2", case_id=instruct_id),
-            "agent3": TraceLogger(run_id, "agent3", case_id=instruct_id),
         }
 
         # Agent 2: ToolAgent（LLM 自主选择编译器或 Z3 Python）
@@ -166,18 +165,18 @@ class PipelineNodes:
         code = state.get("smt_code")
         constraints = state.get("constraints_list")
         iteration = state.get("iteration", 0)
-        trace_logger: TraceLogger | None = state.get("extras", {}).get("trace_logger")
 
         if not code or not constraints:
             return {"error_message": "缺少代码或约束列表"}
 
-        # 对话式日志：评估分隔
-        self._loggers["agent3"].log_separator(f"Evaluation — Iteration {iteration}")
+        # 每次评估使用独立的 trace logger
+        eval_instruct_id = state.get("instruct_id", "unknown")
+        eval_logger = TraceLogger(self.run_id, f"agent3_iter{iteration}", case_id=eval_instruct_id)
         print(f"  [timing] A3 评估 开始 (iter {iteration})")
 
         try:
             result = await eval_module.evaluate(
-                code, constraints, trace_logger=self._loggers["agent3"], iteration=iteration,
+                code, constraints, trace_logger=eval_logger, iteration=iteration,
             )
             elapsed = time.perf_counter() - t0
             satisfied = f"{result.satisfied_count}/{len(result.items)}" if result.items else "?"
