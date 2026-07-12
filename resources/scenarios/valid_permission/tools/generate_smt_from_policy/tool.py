@@ -139,14 +139,21 @@ def _smt_escape(val: str) -> str:
 # ── Extract conditions ───────────────────────────────────────────────────────
 
 def _extract_conditions(stmt: dict) -> list[tuple[str, str, str, list[str]]]:
-    """Extract (operator, key, first_value, all_values) tuples from Condition block."""
+    """Extract (operator, key, first_value, all_values) tuples from Condition block.
+    For null operator, prefer "true"/"false" if available in the value list."""
     result: list[tuple[str, str, str, list[str]]] = []
     cond_block = stmt.get("Condition", {})
     for op, cond_data in cond_block.items():
         if isinstance(cond_data, dict):
             for key, vals in cond_data.items():
                 if isinstance(vals, list) and vals:
-                    result.append((op, key, vals[0], vals))
+                    selected = vals[0]
+                    if op == "null":
+                        for v in vals:
+                            if v in ("true", "false"):
+                                selected = v
+                                break
+                    result.append((op, key, selected, vals))
                 else:
                     val_str = str(vals) if vals else ""
                     result.append((op, key, val_str, [val_str] if val_str else []))
@@ -411,6 +418,14 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
     if "condition_exists" in needed and "Condition" in stmt:
         lines.append(f"(define-fun {pfx}_condition_exists () Bool {pfx}_has_condition)")
 
+    # Condition value non-empty (empty values make condition unsatisfiable)
+    if has_condition_block and conditions and ("condition_value_nonempty" in needed or "cond_1_value_nonempty" in needed):
+        for ci, (op, key, val, _) in enumerate(conditions):
+            c_idx = ci + 1
+            lines.append(f"(define-fun {pfx}_cond_{c_idx}_value_nonempty () Bool")
+            lines.append(f"    (=> {pfx}_has_condition (not (= {pfx}_cond_{c_idx}_value \"\"))))")
+            break  # only one condition value non-empty check needed for now
+
     # Null condition valid
     if "null_condition_valid" in needed:
         null_ops = [c for c in conditions if c[0] == "null"]
@@ -493,7 +508,7 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
         for tag in ["effect_exists", "effect_value_valid", "action_exists", "action_value_valid",
                      "principal_exists", "principal_value_valid",
                      "condition_exists", "condition_operator_key_compatible",
-                     "null_condition_valid"]:
+                     "null_condition_valid", "cond_1_value_nonempty"]:
             if tag in needed:
                 if tag.startswith("effect") and "Effect" not in stmt:
                     continue
@@ -1159,9 +1174,6 @@ def execute(account_data: str, constraints: str) -> str:
     # 2. Validate generator can handle the case
     for stmt in statements:
         conditions = _extract_conditions(stmt)
-        for op, key, val, _ in conditions:
-            if val == "":
-                return f"错误：无法处理空条件值 (operator={op}, key={key})"
         cond_keys = [k for _, k, _, _ in conditions]
         if "g:PrincipalOrgId" in cond_keys and "g:PrincipalOrgPath" in cond_keys:
             return "错误：无法处理 PrincipalOrgId+PrincipalOrgPath 交叉条件"
@@ -1187,6 +1199,8 @@ def execute(account_data: str, constraints: str) -> str:
             needed.add("principal_value_valid")
         if "Condition" in stmt and stmt["Condition"]:
             needed.add("condition_operator_key_compatible")
+            needed.add("condition_value_nonempty")
+            needed.add("cond_1_value_nonempty")
     if statements:
         needed.add("policy_has_valid_permission")
 
