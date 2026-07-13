@@ -82,6 +82,7 @@ class AgentBuilder:
         )
 
     CODE_FIX_SKILL_NAMES = [
+        "run_z3_check",
         "generate_smt_from_policy",
         "check_type_compatibility",
         "check_condition_semantics",
