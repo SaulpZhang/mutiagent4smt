@@ -159,35 +159,6 @@ class PipelineNodes:
             print(f"  [timing] A2 代码生成 开始 (首次)")
 
         try:
-            # 优先尝试直接调用 generate_smt_from_policy（确定性代码生成）
-            try:
-                import runpy, json as _json
-                _tool_mod = runpy.run_path(
-                    str(Path(__file__).parent.parent / "resources/scenarios/valid_permission/tools/generate_smt_from_policy/tool.py")
-                )
-                _gen_smt = _tool_mod["execute"]
-                account_data_str = _json.dumps(input_data.account_data, ensure_ascii=False) if isinstance(input_data.account_data, dict) else str(input_data.account_data)
-                constraints_str = constraints.model_dump_json() if hasattr(constraints, "model_dump_json") else str(constraints)
-                smt_code = _gen_smt(account_data_str, constraints_str)
-                if not smt_code.startswith("错误："):
-                    result = SMTLibCode(code=smt_code)
-                    # 记录工具调用到 trace logger
-                    trace_logger.set_tools([{"name": "generate_smt_from_policy", "description": "程序化生成SMT代码"}])
-                    trace_logger.add_message("assistant", None, [
-                        {"name": "generate_smt_from_policy", "arguments": json.dumps({"account_data": account_data_str[:80], "constraints": constraints_str[:80]})}
-                    ], None, None)
-                    trace_logger.add_message("tool", smt_code[:500], None, "generate_smt_from_policy", None)
-                    trace_logger.flush()
-                    elapsed = time.perf_counter() - t0
-                    print(f"  [timing] A2 代码生成 完成（工具直接生成, {elapsed:.1f}s）")
-                    return {"smt_code": result, "extras": extras}
-                else:
-                    print(f"  [tool] generate_smt_from_policy 返回错误: {smt_code[:80]}")
-            except Exception as tool_e:
-                import traceback
-                print(f"  [tool] generate_smt_from_policy 异常: {tool_e}")
-                traceback.print_exc()
-
             if iteration > 0 and evaluation:
                 original_code = state.get("smt_code")
                 original_str = original_code.code if hasattr(original_code, 'code') else str(original_code) if original_code else ""
