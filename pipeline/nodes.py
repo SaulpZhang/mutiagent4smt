@@ -171,6 +171,12 @@ class PipelineNodes:
                 smt_code = _gen_smt(account_data_str, constraints_str)
                 if not smt_code.startswith("错误："):
                     result = SMTLibCode(code=smt_code)
+                    # 记录工具调用到 trace logger
+                    trace_logger.set_tools([{"name": "generate_smt_from_policy", "description": "程序化生成SMT代码"}])
+                    trace_logger.add_message("assistant", None, [
+                        {"name": "generate_smt_from_policy", "arguments": json.dumps({"account_data": account_data_str[:80], "constraints": constraints_str[:80]})}
+                    ], None, None)
+                    trace_logger.add_message("tool", smt_code[:500], None, "generate_smt_from_policy", None)
                     trace_logger.flush()
                     elapsed = time.perf_counter() - t0
                     print(f"  [timing] A2 代码生成 完成（工具直接生成, {elapsed:.1f}s）")
