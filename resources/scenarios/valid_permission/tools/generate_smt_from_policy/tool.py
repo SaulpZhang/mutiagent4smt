@@ -139,18 +139,28 @@ def _smt_escape(val: str) -> str:
 # ── Extract conditions ───────────────────────────────────────────────────────
 
 def _extract_conditions(stmt: dict) -> list[tuple[str, str, str, list[str]]]:
-    """Extract (operator, key, first_value, all_values) tuples from Condition block.
-    For null operator, prefer "true"/"false" if available in the value list."""
+    """Extract (operator, key, selected_value, all_values) tuples from Condition block.
+    对于 null 运算符，优先选合法值 (true/false)，确保 OR 语义正确。"""
+    NULL_VALID = {"true", "false"}
     result: list[tuple[str, str, str, list[str]]] = []
     cond_block = stmt.get("Condition", {})
+    # 分离前缀运算符（如 StringEquals, StringEqualsIfExists → StringEquals）
+    def _base_op(op: str) -> str:
+        for suffix in ["IfExists"]:
+            if op.endswith(suffix):
+                return op[:-len(suffix)]
+        return op
+
     for op, cond_data in cond_block.items():
+        base = _base_op(op)
         if isinstance(cond_data, dict):
             for key, vals in cond_data.items():
                 if isinstance(vals, list) and vals:
                     selected = vals[0]
-                    if op == "null":
+                    # null 运算符优先选 true/false（OR 语义）
+                    if base == "null":
                         for v in vals:
-                            if v in ("true", "false"):
+                            if v.lower() in NULL_VALID:
                                 selected = v
                                 break
                     result.append((op, key, selected, vals))
@@ -188,6 +198,24 @@ def _map_constraints(constraints_list: list[dict]) -> set[str]:
             if "null" in desc:
                 needed.add("null_condition_valid")
         elif cat == "policy_validity":
+            needed.add("policy_has_valid_permission")
+        elif cat == "action_spec":
+            needed.add("action_exists")
+            needed.add("action_value_valid")
+        elif cat == "principal_spec":
+            needed.add("principal_exists")
+            needed.add("principal_value_valid")
+        elif cat == "condition_spec":
+            needed.add("condition_exists")
+            if "不兼容" in desc or "兼容" in desc:
+                needed.add("condition_operator_key_compatible")
+        elif cat == "operator_key_compatibility":
+            needed.add("condition_operator_key_compatible")
+            if "null" in desc:
+                needed.add("null_condition_valid")
+        elif cat == "condition_contradiction":
+            needed.add("policy_has_valid_permission")
+        elif cat == "deny_coverage":
             needed.add("policy_has_valid_permission")
     return needed
 
@@ -418,17 +446,12 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
     if "condition_exists" in needed and "Condition" in stmt:
         lines.append(f"(define-fun {pfx}_condition_exists () Bool {pfx}_has_condition)")
 
-    # Condition value non-empty (empty values make condition unsatisfiable)
+    # Condition value non-empty
     if has_condition_block and conditions:
-        needs_cond_check = ("condition_value_nonempty" in needed or "cond_1_value_nonempty" in needed)
         for ci, (op, key, val, _) in enumerate(conditions):
             c_idx = ci + 1
-            check_tag = f"cond_{c_idx}_value_nonempty"
-            # Add all cond_N_value_nonempty tags to needed
-            if needs_cond_check:
-                needed.add(check_tag)
-                lines.append(f"(define-fun {pfx}_{check_tag} () Bool")
-                lines.append(f"    (=> {pfx}_has_condition (not (= {pfx}_cond_{c_idx}_value \"\"))))")
+            lines.append(f"(define-fun {pfx}_cond_{c_idx}_value_nonempty () Bool")
+            lines.append(f"    (=> {pfx}_has_condition (not (= {pfx}_cond_{c_idx}_value \"\"))))")
 
     # Null condition valid
     if "null_condition_valid" in needed:
@@ -448,101 +471,51 @@ def _gen_validation_functions(prefix: str, stmt: dict, conditions: list[tuple[st
                 lines.append("    )")
             lines.append(")")
 
-    # Contradiction detection
+    # Statement validity: AND of all available verification checks
+    check_fns: list[str] = []
+    if "effect_exists" in needed and "Effect" in stmt:
+        check_fns.append(f"{pfx}_effect_exists")
+    if "effect_value_valid" in needed and "Effect" in stmt:
+        check_fns.append(f"{pfx}_effect_value_valid")
+    if "action_exists" in needed and "Action" in stmt:
+        check_fns.append(f"{pfx}_action_exists")
+    if "action_value_valid" in needed and "Action" in stmt:
+        check_fns.append(f"{pfx}_action_value_valid")
+    if "principal_exists" in needed and "Principal" in stmt:
+        check_fns.append(f"{pfx}_principal_exists")
+    if "principal_value_valid" in needed and "Principal" in stmt:
+        check_fns.append(f"{pfx}_principal_value_valid")
+    if "condition_operator_key_compatible" in needed and has_condition_block:
+        check_fns.append(f"{pfx}_condition_operator_key_compatible")
+    if "condition_exists" in needed and has_condition_block:
+        check_fns.append(f"{pfx}_condition_exists")
+    # Condition value non-empty checks
+    if has_condition_block and conditions:
+        for ci, (op, key, val, _) in enumerate(conditions):
+            if not val:  # empty value → condition can never be satisfied
+                cname = f"{pfx}_cond_{ci+1}_value_valid"
+                lines.append(f"(define-fun {cname} () Bool false)")
+                check_fns.append(cname)
+    # Null condition validity
+    if "null_condition_valid" in needed:
+        null_ops = [c for c in conditions if c[0].lower() == "null"]
+        if null_ops:
+            check_fns.append(f"{pfx}_null_condition_valid")
+    # Contradiction detection (re-enabled)
     contradictions = _detect_contradictions(conditions, stmt.get("Effect", "Allow"))
-    date_past_only = _has_date_past_only(conditions)
-    if (contradictions or date_past_only) and has_condition_block:
-        if contradictions:
-            lines.append(f";; Contradictions detected: {len(contradictions)}")
-            for c_idx1, c_idx2, reason in contradictions:
-                lines.append(f";;   - Condition {c_idx1+1} vs Condition {c_idx2+1}: {reason}")
-        if date_past_only:
-            lines.append(";; Date condition restricts to the past — unsatisfiable")
-
-        # Generate explicit contradiction checks instead of hardcoded false
-        not_contradictory_checks = []
-        for c_idx1, c_idx2, reason in contradictions:
-            if c_idx2 >= 0 and c_idx1 < len(conditions) and c_idx2 < len(conditions):
-                op1, key1, val1, _ = conditions[c_idx1]
-                op2, key2, val2, _ = conditions[c_idx2]
-                not_contradictory_checks.append(
-                    f"        (and\n"
-                    f"            ;; {reason}\n"
-                    f"            (= {pfx}_cond_{c_idx1+1}_operator {_smt_escape(str(op1))})\n"
-                    f"            (= {pfx}_cond_{c_idx1+1}_key {_smt_escape(str(key1))})\n"
-                    f"            (= {pfx}_cond_{c_idx1+1}_value {_smt_escape(str(val1))})\n"
-                    f"            (= {pfx}_cond_{c_idx2+1}_operator {_smt_escape(str(op2))})\n"
-                    f"            (= {pfx}_cond_{c_idx2+1}_key {_smt_escape(str(key2))})\n"
-                    f"            (= {pfx}_cond_{c_idx2+1}_value {_smt_escape(str(val2))})\n"
-                    f"        )"
-                )
-            elif c_idx1 < len(conditions):
-                op1, key1, val1, _ = conditions[c_idx1]
-                not_contradictory_checks.append(
-                    f"        (and\n"
-                    f"            ;; {reason}\n"
-                    f"            (= {pfx}_cond_{c_idx1+1}_operator {_smt_escape(str(op1))})\n"
-                    f"            (= {pfx}_cond_{c_idx1+1}_key {_smt_escape(str(key1))})\n"
-                    f"            (= {pfx}_cond_{c_idx1+1}_value {_smt_escape(str(val1))})\n"
-                    f"        )"
-                )
-
-        lines.append(f"(define-fun {pfx}_condition_values_not_contradictory () Bool")
-        if date_past_only and not not_contradictory_checks:
-            # Only date_past, no detectable contradictions to express in SMT
-            lines.append("    false  ;; date condition restricts to the past")
-        elif date_past_only:
-            # date_past intrinsically unsatisfiable — false dominates
-            lines.append("    false  ;; date condition restricts to the past")
+    for ci, cj, reason in contradictions:
+        cname = f"s_contradiction_{ci}_{cj}" if cj >= 0 else f"s_contradiction_{ci}_self"
+        lines.append(f"(define-fun {cname} () Bool false)")
+        check_fns.append(cname)
+    if check_fns:
+        lines.append(f"(define-fun {pfx}_statement_valid () Bool")
+        if len(check_fns) == 1:
+            lines.append(f"    {check_fns[0]})")
         else:
-            if len(not_contradictory_checks) == 1:
-                lines.append(f"    (not")
-                lines.append(not_contradictory_checks[0])
-                lines.append(f"    )")
-            else:
-                lines.append(f"    (not (or")
-                for check in not_contradictory_checks:
-                    lines.append(check)
-                lines.append(f"    ))")
-        lines.append(")")
-
-    # Statement-level valid (AND of all checks)
-    if "policy_has_valid_permission" in needed:
-        check_fns = []
-        for tag in ["effect_exists", "effect_value_valid", "action_exists", "action_value_valid",
-                     "principal_exists", "principal_value_valid",
-                     "condition_exists", "condition_operator_key_compatible",
-                     "null_condition_valid", "cond_1_value_nonempty"]:
-            if tag in needed:
-                if tag.startswith("effect") and "Effect" not in stmt:
-                    continue
-                if "action" in tag and "Action" not in stmt:
-                    continue
-                if "principal" in tag and "Principal" not in stmt:
-                    continue
-                if tag == "condition_operator_key_compatible" and not has_condition_block:
-                    continue
-                if tag == "condition_exists" and "Condition" not in stmt:
-                    continue
-                check_fns.append(f"{pfx}_{tag}")
-        # 动态添加所有 cond_N_value_nonempty 检查
-        for tag in sorted(needed):
-            if tag.startswith("cond_") and tag.endswith("_value_nonempty") and tag not in [
-                "cond_1_value_nonempty"]:
-                if tag not in [t for t in check_fns]:
-                    check_fns.append(f"{pfx}_{tag}")
-        if contradictions or date_past_only:
-            check_fns.append(f"{pfx}_condition_values_not_contradictory")
-        if check_fns:
-            lines.append(f"(define-fun {pfx}_statement_valid () Bool")
-            if len(check_fns) == 1:
-                lines.append(f"    {check_fns[0]}")
-            else:
-                lines.append("    (and")
-                for fn in check_fns:
-                    lines.append(f"        {fn}")
-                lines.append("    )")
-            lines.append(")")
+            lines.append("    (and")
+            for fn in check_fns:
+                lines.append(f"        {fn}")
+            lines.append("    ))")
     return lines
 
 
@@ -933,6 +906,17 @@ def _detect_contradictions(conditions: list[tuple[str, str, str, list[str]]], ef
             if val not in VALID_PRINCIPAL_TYPES:
                 contradictions.append((ci, -1, f"stringequals:PrincipalType value '{val}' is not valid"))
 
+    # dateequals/datenotequals on g:CurrentTime are never satisfiable
+    for ci, (op, k, v, _) in enumerate(conditions):
+        op_lower = op.lower().replace(" ", "")
+        if k == "g:CurrentTime" and op_lower in ("dateequals", "datenotequals"):
+            contradictions.append((ci, -1,
+                f"{op} on g:CurrentTime can never be satisfied"))
+
+    # Date conditions that only restrict to past times
+    if _has_date_past_only(conditions):
+        contradictions.append((-1, -1, "date conditions only allow past times"))
+
     return contradictions
 
 
@@ -1209,8 +1193,6 @@ def execute(account_data: str, constraints: str) -> str:
             needed.add("principal_value_valid")
         if "Condition" in stmt and stmt["Condition"]:
             needed.add("condition_operator_key_compatible")
-            needed.add("condition_value_nonempty")
-            needed.add("cond_1_value_nonempty")
     if statements:
         needed.add("policy_has_valid_permission")
 

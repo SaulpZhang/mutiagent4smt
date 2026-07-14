@@ -91,7 +91,7 @@ class GenerationModule:
             raise RuntimeError("需要 fix_agent，但未构建")
 
         result = await self.fix_agent.run(
-            prompt="",
+            prompt=f"验证指令：{input_data.instruction}",
             constraints_json=(
                 constraints.model_dump_json()
                 if hasattr(constraints, "model_dump_json")

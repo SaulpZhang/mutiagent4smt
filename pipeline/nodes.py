@@ -24,10 +24,12 @@ class PipelineNodes:
         scenario_name: str = "valid_permission",
         run_id: str = "",
         instruct_id: str = "",
+        ablation_mode: str = "full",
     ) -> None:
         self._modules: dict[str, Any] = {}
         self.run_id = run_id
         self.scenario_name = scenario_name
+        self.ablation_mode = ablation_mode
 
         prompt_manager = PromptManager(scenario_name=scenario_name)
         agent_builder = AgentBuilder(scenario_name=scenario_name)
@@ -74,6 +76,33 @@ class PipelineNodes:
             return {"error_message": "缺少输入数据"}
         extras = dict(state.get("extras", {}))
         extras["gen_start_time"] = time.perf_counter()
+
+        # 保存输入数据（策略+验证指令+标签）到日志目录
+        import json as _json
+        from pathlib import Path as _Path
+        import re as _re
+        input_path = _Path("data") / self.run_id / "log" / state.get("instruct_id", "unknown") / "input.json"
+        input_path.parent.mkdir(parents=True, exist_ok=True)
+        # 从 instruct_id 提取编号查找对应 label
+        _instruct_id = state.get("instruct_id", "")
+        _label = None
+        _m = _re.match(r"instruct_(\d+)_(\d+)", _instruct_id)
+        if _m:
+            _answers_path = _Path(__file__).parent.parent / "dataset" / self.scenario_name / "answer_valid_permission.json"
+            if _answers_path.exists():
+                _answers = _json.loads(_answers_path.read_text(encoding="utf-8"))
+                _idx = int(_m.group(2)) - 1
+                if 0 <= _idx < len(_answers):
+                    _label = _answers[_idx]
+        input_path.write_text(
+            _json.dumps({
+                "instruct_id": _instruct_id,
+                "label": _label,
+                "instruction": input_data.instruction,
+                "account_data": input_data.account_data,
+            }, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
         self._loggers["agent1"].log_separator("意图理解 — 约束生成")
         print(f"  [timing] A1 意图理解 开始")
@@ -130,6 +159,28 @@ class PipelineNodes:
             print(f"  [timing] A2 代码生成 开始 (首次)")
 
         try:
+            # 优先尝试直接调用 generate_smt_from_policy（确定性代码生成）
+            try:
+                import runpy, json as _json
+                _tool_mod = runpy.run_path(
+                    str(Path(__file__).parent.parent / "resources/scenarios/valid_permission/tools/generate_smt_from_policy/tool.py")
+                )
+                _gen_smt = _tool_mod["execute"]
+                account_data_str = _json.dumps(input_data.account_data, ensure_ascii=False) if isinstance(input_data.account_data, dict) else str(input_data.account_data)
+                constraints_str = constraints.model_dump_json() if hasattr(constraints, "model_dump_json") else str(constraints)
+                smt_code = _gen_smt(account_data_str, constraints_str)
+                if not smt_code.startswith("错误："):
+                    result = SMTLibCode(code=smt_code)
+                    elapsed = time.perf_counter() - t0
+                    print(f"  [timing] A2 代码生成 完成（工具直接生成, {elapsed:.1f}s）")
+                    return {"smt_code": result, "extras": extras}
+                else:
+                    print(f"  [tool] generate_smt_from_policy 返回错误: {smt_code[:80]}")
+            except Exception as tool_e:
+                import traceback
+                print(f"  [tool] generate_smt_from_policy 异常: {tool_e}")
+                traceback.print_exc()
+
             if iteration > 0 and evaluation:
                 original_code = state.get("smt_code")
                 original_str = original_code.code if hasattr(original_code, 'code') else str(original_code) if original_code else ""
@@ -210,7 +261,19 @@ class PipelineNodes:
         if code and not evaluation:
             evaluation = EvaluationResult(items=[], all_satisfied=True, summary="消融模式 — 无Agent3评估")
 
-        if not code:
+        if self.ablation_mode == "a1_only":
+            # A1-only 模式：仅输出约束列表，不生成 SMT 代码
+            a1_path = Path("data") / self.run_id / "log" / instruct_id / "a1_constraints.json"
+            a1_path.parent.mkdir(parents=True, exist_ok=True)
+            a1_path.write_text(
+                constraints.model_dump_json(indent=2, ensure_ascii=False)
+                if constraints else json.dumps({"error": "约束列表为空"}),
+                encoding="utf-8",
+            )
+            code = SMTLibCode(code="; A1-only 模式 — 仅意图理解\n; 约束列表已保存至 a1_constraints.json")
+            evaluation = EvaluationResult(items=[], all_satisfied=True, summary="A1-only 消融模式 — 仅意图理解")
+            output_result = output_module.generate_output(code, evaluation, instruct_id, constraints)
+        elif not code:
             error_msg = state.get("error_message", "未知错误")
             output_result = output_module.generate_error_output(error_msg, instruct_id)
         else:

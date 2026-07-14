@@ -41,14 +41,16 @@ def build_case_pipeline(
     """构建单用例处理的流水线
 
     ablation_mode:
-        full    — intent_agent → code_gen → evaluate → (loop|output)
-        no_eval — intent_agent → code_gen → output  (跳过 Agent3)
+        full     — intent_agent → code_gen → evaluate → (loop|output)
+        no_eval  — intent_agent → code_gen → output  (跳过 Agent3)
         gen_only — mock_intent → code_gen → output  (跳过 Agent1+Agent3)
+        a1_only  — intent_agent → output → verify  (仅 Agent1)
     """
     nodes = PipelineNodes(
         scenario_name=scenario_name,
         run_id=run_id,
         instruct_id=instruct_id,
+        ablation_mode=ablation_mode,
     )
 
     workflow = StateGraph(PipelineState)
@@ -58,7 +60,7 @@ def build_case_pipeline(
     workflow.add_node("output", nodes.output_node)
     workflow.add_node("verify", nodes.verify_node)
 
-    if ablation_mode in ("full", "no_eval"):
+    if ablation_mode in ("full", "no_eval", "a1_only"):
         workflow.add_node("intent_agent", nodes.intent_agent_node)
 
     if ablation_mode == "full":
@@ -75,6 +77,9 @@ def build_case_pipeline(
         workflow.set_entry_point("intent_agent")
         workflow.add_edge("intent_agent", "code_gen")
         workflow.add_edge("code_gen", "output")
+    elif ablation_mode == "a1_only":
+        workflow.set_entry_point("intent_agent")
+        workflow.add_edge("intent_agent", "output")
     else:  # full
         workflow.set_entry_point("intent_agent")
         workflow.add_edge("intent_agent", "code_gen")

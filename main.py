@@ -26,8 +26,8 @@ def main() -> None:
 
     run_parser = subparsers.add_parser("run", help="运行系统流水线")
     run_parser.add_argument(
-        "--index", type=int, default=None,
-        help="指定单个用例编号（从1开始），不指定则运行全部",
+        "--index", type=str, default=None,
+        help="指定用例编号（从1开始），多个用逗号分隔如 1,5,22，不指定则运行全部",
     )
     run_parser.add_argument(
         "--model", type=str, default=None,
@@ -64,8 +64,8 @@ def main() -> None:
     )
     run_parser.add_argument(
         "--ablation", type=str, default="full",
-        choices=["full", "no_eval", "gen_only"],
-        help="消融模式（full=全部Agent, no_eval=无Agent3评估, gen_only=仅Agent2代码生成）",
+        choices=["full", "no_eval", "gen_only", "a1_only"],
+        help="消融模式（full=全部Agent, no_eval=无Agent3评估, gen_only=仅Agent2, a1_only=仅Agent1意图理解）",
     )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
@@ -102,7 +102,7 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         print(f"  尝试次数:   {attempts}（用于PASS@1/3/5统计）")
     print(f"  提示词:     {prompt_type}")
     if ablation_mode != "full":
-        ablation_labels = {"no_eval": "无Agent3（A1+A2）", "gen_only": "仅Agent2"}
+        ablation_labels = {"no_eval": "无Agent3（A1+A2）", "gen_only": "仅Agent2", "a1_only": "仅Agent1"}
         print(f"  消融模式:   {ablation_labels.get(ablation_mode, ablation_mode)}")
     print("=" * 60)
 
@@ -129,9 +129,9 @@ async def run_pipeline(args: argparse.Namespace) -> None:
     print(f"  实验编号: {run_id}\n")
 
     if args.index is not None:
-        indices = [args.index - 1]
-        total = 1
-        print(f"运行单用例: 第 {args.index} 个\n")
+        indices = [int(x.strip()) - 1 for x in args.index.split(",") if x.strip().isdigit()]
+        total = len(indices)
+        print(f"运行 {total} 个用例: {args.index}\n")
     elif args.from_ is not None and args.to is not None:
         indices = list(range(args.from_, args.to))
         total = len(indices)

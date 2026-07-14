@@ -67,7 +67,7 @@ class AgentBuilder:
             system_prompt=system_prompt,
             llm_client=self._build_client(settings.agent_1_model),
             skills=skills,
-            max_steps=20,
+            max_steps=30,
         )
 
     def build_tool_code_gen_agent(self) -> ToolAgent:
@@ -79,7 +79,7 @@ class AgentBuilder:
             skills=skills,
             system_prompt=system_prompt,
             prompt_manager=self.prompt_manager,
-            max_steps=20,
+            max_steps=30,
         )
 
     CODE_FIX_SKILL_NAMES = [
@@ -100,7 +100,7 @@ class AgentBuilder:
             skills=skills,
             system_prompt=system_prompt,
             prompt_manager=self.prompt_manager,
-            max_steps=20,
+            max_steps=30,
             prompt_key="fix",
         )
 
@@ -116,5 +116,5 @@ class AgentBuilder:
             system_prompt=system_prompt,
             llm_client=self._build_client(settings.agent_3_model),
             skills=skills,
-            max_steps=20,
+            max_steps=30,
         )

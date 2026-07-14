@@ -10,9 +10,11 @@ from core.prompt_manager import PromptManager
 from modules.agent_builder import AgentBuilder
 from modules.evaluation_module import EvaluationModule, strip_smt_comments
 from core.schemas import SMTLibCode, ConstraintsList, Constraint
+from core.trace_logger import TraceLogger
 
 
-async def evaluate_case(eval_module, code: str, constraints_list: str) -> dict:
+async def evaluate_case(eval_module, code: str, constraints_list: str,
+                        run_id: str = "", instruct_id: str = "", iteration: int = 0) -> dict:
     """对单个用例跑 A3 评估，返回 all_satisfied"""
     clean_code = strip_smt_comments(code)
 
@@ -36,8 +38,12 @@ async def evaluate_case(eval_module, code: str, constraints_list: str) -> dict:
 
     code_obj = SMTLibCode(code=clean_code)
 
+    # 创建独立的 trace logger
+    trace_logger = TraceLogger(run_id, f"agent3_retro_iter{iteration}", case_id=instruct_id)
+
     try:
-        result = await eval_module.evaluate(code_obj, constraints)
+        result = await eval_module.evaluate(code_obj, constraints, trace_logger=trace_logger,
+                                             iteration=iteration)
         return {
             "all_satisfied": result.all_satisfied,
             "satisfied_count": result.satisfied_count,
@@ -45,6 +51,8 @@ async def evaluate_case(eval_module, code: str, constraints_list: str) -> dict:
             "summary": result.summary[:200],
         }
     except Exception as e:
+        trace_logger.add_message("error", str(e))
+        trace_logger.flush()
         return {"all_satisfied": None, "error": str(e)}
 
 
@@ -87,7 +95,8 @@ async def main():
             if run_id == 'exp_gen_only' and iid in noeval_constraints:
                 constraints_json = noeval_constraints[iid]
 
-            result = await evaluate_case(eval_module, code, constraints_json)
+            result = await evaluate_case(eval_module, code, constraints_json,
+                                           run_id=run_id, instruct_id=iid, iteration=0)
 
             if result.get("all_satisfied") is True:
                 sat_count += 1
