@@ -171,6 +171,7 @@ class PipelineNodes:
                 smt_code = _gen_smt(account_data_str, constraints_str)
                 if not smt_code.startswith("错误："):
                     result = SMTLibCode(code=smt_code)
+                    trace_logger.flush()
                     elapsed = time.perf_counter() - t0
                     print(f"  [timing] A2 代码生成 完成（工具直接生成, {elapsed:.1f}s）")
                     return {"smt_code": result, "extras": extras}
@@ -242,6 +243,7 @@ class PipelineNodes:
                 result.model_dump_json(indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
+            eval_logger.flush()
 
             return {"evaluation_result": result, "iteration": iteration + 1}
         except Exception as e:
