@@ -103,13 +103,24 @@ class LLMClient:
         if model_kwargs:
             kwargs["model_kwargs"] = model_kwargs
 
-        # DeepSeek 推理参数
-        if self.reasoning_effort:
-            kwargs["reasoning_effort"] = self.reasoning_effort
-        if self.thinking:
-            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
-        elif self.thinking is not None and not self.thinking:
-            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        # 模型特定推理参数
+        if "deepseek" in self.model_name.lower():
+            if self.reasoning_effort:
+                kwargs["reasoning_effort"] = self.reasoning_effort
+            if self.thinking:
+                kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+            elif self.thinking is not None and not self.thinking:
+                kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        elif "qwen" in self.model_name.lower():
+            # vLLM Qwen 采样参数
+            kwargs["temperature"] = 0.6
+            kwargs["extra_body"] = {
+                "top_p": 0.95,
+                "top_k": 20,
+                "min_p": 0.0,
+                "presence_penalty": 0.0,
+                "repetition_penalty": 1.0,
+            }
 
         # 传递共享httpx异步客户端（类级复用，避免连接泄漏）
         kwargs["http_async_client"] = self._get_shared_async_client()
