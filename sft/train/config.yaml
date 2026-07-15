@@ -4,8 +4,8 @@ model:
   torch_dtype: "bfloat16"
   device_map: "auto"
   trust_remote_code: true
-  max_length: 32000
-  load_in_4bit: false  # 设为 true 启用 QLoRA（显存不足时）
+  max_length: 16384
+  load_in_4bit: true
 
 lora:
   r: 16
