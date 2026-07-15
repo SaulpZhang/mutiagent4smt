@@ -100,13 +100,23 @@ def main():
 
     # 3. 模型
     print(f"加载模型: {model_name}")
-    dtype = torch.bfloat16 if cfg["model"]["torch_dtype"] == "bfloat16" else torch.float16
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=dtype,
+    model_kwargs = dict(
         device_map=cfg["model"]["device_map"],
         trust_remote_code=cfg["model"]["trust_remote_code"],
     )
+    if cfg["model"].get("load_in_4bit"):
+        from transformers import BitsAndBytesConfig
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+        )
+        model_kwargs["torch_dtype"] = torch.bfloat16
+    else:
+        dtype = torch.bfloat16 if cfg["model"]["torch_dtype"] == "bfloat16" else torch.float16
+        model_kwargs["torch_dtype"] = dtype
+
+    model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
 
     # 4. LoRA
     lc = cfg["lora"]

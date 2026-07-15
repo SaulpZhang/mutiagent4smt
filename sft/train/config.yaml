@@ -5,6 +5,7 @@ model:
   device_map: "auto"
   trust_remote_code: true
   max_length: 32000
+  load_in_4bit: false  # 设为 true 启用 QLoRA（显存不足时）
 
 lora:
   r: 16
@@ -27,11 +28,11 @@ data:
   test_ratio: 0.15
 
 training:
-  batch_size: 4
-  grad_accumulation_steps: 2
+  batch_size: 1
+  grad_accumulation_steps: 4
   gradient_checkpointing: true
   bf16: true
-  optim: "adamw_bnb_8bit"
+  optim: "paged_adamw_8bit"
   learning_rate: 0.00001
   lr_scheduler_type: "cosine"
   warmup_ratio: 0.03
@@ -47,7 +48,7 @@ training:
 wandb:
   project: "smt-sft"
   entity: "saulpzhang"
-  run_name: null  # null 时自动生成
+  run_name: null
 
 output:
   dir: "output"
