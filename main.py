@@ -67,6 +67,10 @@ def main() -> None:
         choices=["full", "no_eval", "gen_only", "a1_only"],
         help="消融模式（full=全部Agent, no_eval=无Agent3评估, gen_only=仅Agent2, a1_only=仅Agent1意图理解）",
     )
+    run_parser.add_argument(
+        "--dataset", type=str, default=None,
+        help="数据集路径，指向包含 instructs/ accounts/ 和 answer_valid_permission.json 的目录。不指定则使用默认数据集",
+    )
 
     subparsers.add_parser("stats", help="查看实验结果统计")
     subparsers.add_parser("init", help="初始化项目（检查配置和依赖）")
@@ -106,7 +110,10 @@ async def run_pipeline(args: argparse.Namespace) -> None:
         print(f"  消融模式:   {ablation_labels.get(ablation_mode, ablation_mode)}")
     print("=" * 60)
 
-    input_module = InputModule(settings.data_dir)
+    data_dir = args.dataset or settings.data_dir
+    input_module = InputModule(data_dir)
+    if args.dataset:
+        print(f"  数据集:    {args.dataset}")
     recorder = ExperimentRecorder(settings.db_path)
     recorder.enable_wal()
 
