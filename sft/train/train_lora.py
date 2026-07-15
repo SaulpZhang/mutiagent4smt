@@ -20,6 +20,7 @@ from transformers import (
     AutoTokenizer,
     TrainingArguments,
     Trainer,
+    TrainerCallback,
     DataCollatorForSeq2Seq,
 )
 
@@ -118,20 +119,47 @@ def main():
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    # 5. 数据处理
+    # 5. 数据处理（mask 非 assistant 部分的 label）
     def tokenize_fn(examples):
-        texts = [
-            tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
-            for msgs in examples["messages"]
-        ]
-        tokenized = tokenizer(
-            texts,
-            truncation=True,
-            max_length=cfg["model"]["max_length"],
-            padding=False,
-        )
-        tokenized["labels"] = tokenized["input_ids"].copy()
-        return tokenized
+        all_input_ids = []
+        all_labels = []
+        for msgs in examples["messages"]:
+            text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
+            encoded = tokenizer(text, truncation=True, max_length=cfg["model"]["max_length"])
+            input_ids = encoded["input_ids"]
+            labels = [-100] * len(input_ids)
+
+            # 定位 assistant 回复的 token 范围，保留其 label
+            assistant_token = "<|im_start|>assistant"
+            assistant_ids = tokenizer.encode(assistant_token, add_special_tokens=False)
+            as_len = len(assistant_ids)
+
+            # 从后往前找每个 assistant 回复
+            pos = 0
+            while True:
+                # 找 assistant token 序列
+                start = -1
+                for i in range(pos, len(input_ids) - as_len + 1):
+                    if input_ids[i:i+as_len] == assistant_ids:
+                        start = i
+                        break
+                if start == -1:
+                    break
+                # assistant 回复从 <|im_start|>assistant 开始到下一个 <|im_start|> 或结尾
+                end = len(input_ids)
+                for i in range(start + as_len, len(input_ids)):
+                    if input_ids[i] == tokenizer.encode("<|im_start|>", add_special_tokens=False)[0]:
+                        end = i
+                        break
+                # 保留 assistant 回复部分的 label（从 assistant token 开始）
+                for i in range(start, end):
+                    labels[i] = input_ids[i]
+                pos = end
+
+            all_input_ids.append(input_ids)
+            all_labels.append(labels)
+
+        return {"input_ids": all_input_ids, "labels": all_labels, "attention_mask": [[1]*len(ids) for ids in all_input_ids]}
 
     train_dataset = Dataset.from_list(train_data).map(
         tokenize_fn, batched=True, remove_columns=["messages"]
@@ -175,7 +203,17 @@ def main():
         max_length=cfg["model"]["max_length"],
     )
 
-    # 7. Trainer
+    # 7. Test evaluation callback
+    test_eval_interval = tc.get("test_eval_steps", 0)
+
+    class TestEvalCallback(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            if test_eval_interval and state.global_step % test_eval_interval == 0 and state.global_step > 0:
+                m = trainer.evaluate(test_dataset)
+                wandb.log({"test/loss": m.get("eval_loss")}, step=state.global_step)
+                print(f"  [step {state.global_step}] test_loss: {m.get('eval_loss', 'N/A')}")
+
+    # 8. Trainer
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -183,6 +221,7 @@ def main():
         eval_dataset=valid_dataset,
         data_collator=data_collator,
         tokenizer=tokenizer,
+        callbacks=[TestEvalCallback()] if test_eval_interval else None,
     )
 
     # 8. 训练
@@ -194,12 +233,6 @@ def main():
     model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
     print(f"LoRA adapter 保存到: {adapter_dir}")
-
-    # 10. 测试评估
-    print("\n测试集评估...")
-    test_results = trainer.evaluate(test_dataset)
-    print(f"测试集 loss: {test_results.get('eval_loss', 'N/A')}")
-    wandb.log({"test/" + k: v for k, v in test_results.items()})
 
     print(f"\n完成! 结果: {output_dir}")
     wandb.finish()
