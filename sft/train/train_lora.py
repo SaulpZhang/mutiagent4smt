@@ -113,6 +113,7 @@ def main():
     model_kwargs = dict(
         device_map=cfg["model"]["device_map"],
         trust_remote_code=cfg["model"]["trust_remote_code"],
+        attn_implementation="flash_attention_2",
     )
     if cfg["model"].get("load_in_4bit"):
         from transformers import BitsAndBytesConfig
