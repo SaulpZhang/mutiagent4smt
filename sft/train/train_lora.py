@@ -223,7 +223,6 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
         data_collator=data_collator,
-        tokenizer=tokenizer,
         callbacks=[TestEvalCallback()] if test_eval_interval else None,
     )
 
