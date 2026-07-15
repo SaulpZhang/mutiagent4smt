@@ -57,3 +57,7 @@ cot_smt/*
 experiments/
 
 docs/
+
+remote_data/
+
+sft/data_synthesis/output
