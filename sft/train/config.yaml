@@ -46,6 +46,7 @@ training:
 
 wandb:
   project: "smt-sft"
+  entity: "saulpzhang"
   run_name: null  # null 时自动生成
 
 output:

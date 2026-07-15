@@ -74,6 +74,8 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     os.environ["WANDB_PROJECT"] = cfg["wandb"]["project"]
+    if cfg["wandb"].get("entity"):
+        os.environ["WANDB_ENTITY"] = cfg["wandb"]["entity"]
 
     # 1. 数据
     data_dir = BASE_DIR / cfg["data"]["path"]
