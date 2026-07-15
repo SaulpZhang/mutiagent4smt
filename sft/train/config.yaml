@@ -30,7 +30,7 @@ data:
 seed: 42
 
 training:
-  batch_size: 2
+  batch_size: 1
   grad_accumulation_steps: 4
   gradient_checkpointing: true
   bf16: true
