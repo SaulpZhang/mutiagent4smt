@@ -78,6 +78,9 @@ def main():
     if cfg["wandb"].get("entity"):
         os.environ["WANDB_ENTITY"] = cfg["wandb"]["entity"]
 
+    # 减少 CUDA 内存碎片
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
     # 固定随机种子
     seed = cfg.get("seed", 42)
     random.seed(seed)
