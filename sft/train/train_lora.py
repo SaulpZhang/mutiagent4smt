@@ -69,7 +69,8 @@ def main():
         sys.exit(1)
 
     cfg = load_config(str(config_path))
-    run_name = cfg["wandb"]["run_name"] or f"lora_r{cfg['lora']['r']}_lr{cfg['training']['learning_rate']}"
+    from datetime import datetime
+    run_name = cfg["wandb"]["run_name"] or datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = BASE_DIR / cfg["output"]["dir"] / run_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
