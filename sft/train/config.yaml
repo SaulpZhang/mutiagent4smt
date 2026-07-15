@@ -1,0 +1,51 @@
+# LoRA 微调配置
+model:
+  name: "Qwen/Qwen3.5-9B"
+  torch_dtype: "bfloat16"
+  device_map: "auto"
+  trust_remote_code: true
+  max_length: 32000
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  bias: "none"
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+
+data:
+  path: "dataset"
+  train_ratio: 0.70
+  valid_ratio: 0.15
+  test_ratio: 0.15
+
+training:
+  batch_size: 4
+  grad_accumulation_steps: 2
+  gradient_checkpointing: true
+  bf16: true
+  optim: "adamw_bnb_8bit"
+  learning_rate: 1e-5
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  num_epochs: 3
+  logging_steps: 10
+  eval_steps: 100
+  save_steps: 500
+  save_total_limit: 3
+  dataloader_workers: 2
+  remove_unused_columns: false
+
+wandb:
+  project: "smt-sft"
+  run_name: null  # null 时自动生成
+
+output:
+  dir: "output"
