@@ -78,6 +78,13 @@ def main():
     if cfg["wandb"].get("entity"):
         os.environ["WANDB_ENTITY"] = cfg["wandb"]["entity"]
 
+    # 固定随机种子
+    seed = cfg.get("seed", 42)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
     # 1. 数据
     data_dir = BASE_DIR / cfg["data"]["path"]
     print(f"加载数据: {data_dir}")
@@ -188,6 +195,7 @@ def main():
     tc = cfg["training"]
     training_args = TrainingArguments(
         output_dir=str(output_dir),
+        seed=seed,
         per_device_train_batch_size=tc["batch_size"],
         per_device_eval_batch_size=tc["batch_size"],
         gradient_accumulation_steps=tc["grad_accumulation_steps"],
