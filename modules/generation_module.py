@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from agent.base import BaseAgent
 from agent.tool_agent import ToolAgent
 from core.schemas import (
@@ -36,7 +38,7 @@ class GenerationModule:
         system_prompt, user_prompt = self.prompt_manager.load_agent_prompt(
             "1",
             instruction=input_data.instruction,
-            account_data=str(input_data.account_data),
+            account_data=json.dumps(input_data.account_data, ensure_ascii=False),
         )
         result = await self.intent_agent.run(prompt=user_prompt, trace_logger=trace_logger)
         return result  # type: ignore[return-value]
@@ -55,7 +57,7 @@ class GenerationModule:
 
         prompt_text = (
             f"验证指令：{input_data.instruction}\n\n"
-            f"IAM配置：{str(input_data.account_data)}"
+            f"IAM配置：{json.dumps(input_data.account_data, ensure_ascii=False)}"
         )
         constraints_json = (
             constraints.model_dump_json()
