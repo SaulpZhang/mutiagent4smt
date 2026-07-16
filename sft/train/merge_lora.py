@@ -50,7 +50,19 @@ def merge(lora_folder: str):
         config["model_type"] = "qwen3_5"
         config["architectures"] = ["Qwen3_5ForCausalLM"]
         config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False))
-        print(f"config.json 已修正: model_type=qwen3_5, architectures=Qwen3_5ForCausalLM")
+        print(f"config.json 已修正")
+
+    # 复制 vLLM 需要的辅助配置文件
+    from transformers.utils import cached_file
+    import shutil
+    for extra in ["preprocessor_config.json", "generation_config.json"]:
+        try:
+            cf = cached_file(BASE_MODEL, extra)
+            if cf:
+                shutil.copy2(cf, out_dir / extra)
+                print(f"已复制: {extra}")
+        except Exception as e:
+            print(f"  跳过 {extra}: {e}")
 
     print(f"完成! 合并后的模型在: {out_dir}")
 
