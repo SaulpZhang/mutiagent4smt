@@ -79,8 +79,11 @@ def main():
     if cfg["wandb"].get("entity"):
         os.environ["WANDB_ENTITY"] = cfg["wandb"]["entity"]
 
-    # 减少 CUDA 内存碎片
-    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    # 限制 CUDA 显存上限，防止缓存预留占用过多
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:128")
+    if torch.cuda.is_available():
+        torch.cuda.set_per_process_memory_fraction(0.65)  # 47GB × 0.65 ≈ 30GB
+        print(f"  显存上限: {torch.cuda.get_device_properties(0).total_memory * 0.65 / 1e9:.0f}GB")
 
     # 固定随机种子
     seed = cfg.get("seed", 42)
@@ -244,14 +247,13 @@ def main():
 
     class TestEvalCallback(TrainerCallback):
         def on_step_begin(self, args, state, control, **kwargs):
-            if state.global_step <= 20 or state.global_step % 50 == 0:
+            if state.global_step <= 10 or state.global_step % 50 == 0:
                 a = torch.cuda.memory_allocated() / 1e9
                 r = torch.cuda.memory_reserved() / 1e9
                 print(f"  [step {state.global_step:>4d}] alloc={a:.1f}GB | reserved={r:.1f}GB")
 
         def on_step_end(self, args, state, control, **kwargs):
-            # 每 10 步清理缓存防碎片
-            if state.global_step % 10 == 0:
+            if state.global_step <= 5 or state.global_step % 10 == 0:
                 gc.collect()
                 torch.cuda.empty_cache()
             if test_eval_interval and state.global_step % test_eval_interval == 0 and state.global_step > 0:
