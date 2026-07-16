@@ -114,7 +114,6 @@ def main():
     model_kwargs = dict(
         device_map=cfg["model"]["device_map"],
         trust_remote_code=cfg["model"]["trust_remote_code"],
-        attn_implementation="flash_attention_2",
     )
     if cfg["model"].get("offload_folder"):
         model_kwargs["offload_folder"] = cfg["model"]["offload_folder"]
@@ -244,8 +243,10 @@ def main():
 
     class TestEvalCallback(TrainerCallback):
         def on_step_begin(self, args, state, control, **kwargs):
-            if state.global_step % 10 == 0 and state.global_step > 0:
-                print(f"  [step {state.global_step}] mem={torch.cuda.memory_allocated()/1e9:.1f}GB | max={torch.cuda.max_memory_allocated()/1e9:.1f}GB")
+            if state.global_step <= 20 or state.global_step % 50 == 0:
+                a = torch.cuda.memory_allocated() / 1e9
+                r = torch.cuda.memory_reserved() / 1e9
+                print(f"  [step {state.global_step:>4d}] alloc={a:.1f}GB | reserved={r:.1f}GB")
 
         def on_step_end(self, args, state, control, **kwargs):
             # 每 10 步清理缓存防碎片
