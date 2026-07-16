@@ -114,7 +114,7 @@ def main():
     model_kwargs = dict(
         device_map=cfg["model"]["device_map"],
         trust_remote_code=cfg["model"]["trust_remote_code"],
-        attn_implementation="sdpa",
+        attn_implementation="flash_attention_2",
     )
     if cfg["model"].get("offload_folder"):
         model_kwargs["offload_folder"] = cfg["model"]["offload_folder"]
@@ -214,7 +214,7 @@ def main():
         per_device_eval_batch_size=tc["batch_size"],
         gradient_accumulation_steps=tc["grad_accumulation_steps"],
         gradient_checkpointing=tc["gradient_checkpointing"],
-        gradient_checkpointing_kwargs={"use_reentrant": True},
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         bf16=tc["bf16"],
         optim=tc["optim"],
         learning_rate=float(tc["learning_rate"]),
