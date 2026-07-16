@@ -45,7 +45,7 @@ training:
   test_eval_steps: 100
   save_steps: 500
   save_total_limit: 3
-  dataloader_workers: 2
+  dataloader_workers: 0
   remove_unused_columns: false
 
 wandb:
