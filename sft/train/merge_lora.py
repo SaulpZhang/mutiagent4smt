@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 from peft import PeftModel
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModelForVision2Seq, AutoTokenizer
 
 BASE_MODEL = "Qwen/Qwen3.5-9B"
 LORA_PATH = Path(__file__).parent / "output"  # LoRA adapter 目录
@@ -23,7 +23,7 @@ def merge(lora_folder: str):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"加载基座模型: {BASE_MODEL}")
-    model = AutoModel.from_pretrained(
+    model = AutoModelForVision2Seq.from_pretrained(
         BASE_MODEL,
         torch_dtype=torch.bfloat16,
         device_map="auto",
@@ -52,17 +52,6 @@ def merge(lora_folder: str):
         config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False))
         print(f"config.json 已修正")
 
-    # 复制 vLLM 需要的辅助配置文件
-    from transformers.utils import cached_file
-    import shutil
-    for extra in ["preprocessor_config.json", "generation_config.json"]:
-        try:
-            cf = cached_file(BASE_MODEL, extra)
-            if cf:
-                shutil.copy2(cf, out_dir / extra)
-                print(f"已复制: {extra}")
-        except Exception as e:
-            print(f"  跳过 {extra}: {e}")
 
     print(f"完成! 合并后的模型在: {out_dir}")
 
