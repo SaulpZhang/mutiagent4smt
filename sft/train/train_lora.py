@@ -15,7 +15,7 @@ import torch
 import wandb
 import yaml
 from datasets import Dataset
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
