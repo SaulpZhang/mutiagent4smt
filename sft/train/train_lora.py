@@ -131,6 +131,8 @@ def main():
         model_kwargs["torch_dtype"] = dtype
 
     model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+    if torch.cuda.is_available():
+        print(f"  模型加载后显存: {torch.cuda.memory_allocated()/1e9:.1f} GB")
 
     # 4. LoRA
     lc = cfg["lora"]
@@ -148,6 +150,8 @@ def main():
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
+    if torch.cuda.is_available():
+        print(f"  LoRA配置后显存: {torch.cuda.memory_allocated()/1e9:.1f} GB")
 
     # 5. 数据处理（mask 非 assistant 部分的 label）
     def tokenize_fn(examples):
