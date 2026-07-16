@@ -243,6 +243,10 @@ def main():
     test_eval_interval = tc.get("test_eval_steps", 0)
 
     class TestEvalCallback(TrainerCallback):
+        def on_step_begin(self, args, state, control, **kwargs):
+            if state.global_step % 10 == 0 and state.global_step > 0:
+                print(f"  [step {state.global_step}] mem={torch.cuda.memory_allocated()/1e9:.1f}GB | max={torch.cuda.max_memory_allocated()/1e9:.1f}GB")
+
         def on_step_end(self, args, state, control, **kwargs):
             # 每 10 步清理缓存防碎片
             if state.global_step % 10 == 0:
