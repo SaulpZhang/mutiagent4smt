@@ -89,7 +89,7 @@ def main():
     # 2. Tokenizer
     model_name = cfg["model"]["name"]
     print(f"加载 tokenizer: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, padding_side="right")
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, padding_side="right", local_files_only=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
