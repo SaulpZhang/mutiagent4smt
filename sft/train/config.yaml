@@ -6,6 +6,7 @@ model:
   trust_remote_code: true
   max_length: 16384
   load_in_4bit: false
+  offload_folder: "/tmp/offload"
 
 lora:
   r: 16

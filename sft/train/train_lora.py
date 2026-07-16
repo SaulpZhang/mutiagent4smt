@@ -115,6 +115,8 @@ def main():
         trust_remote_code=cfg["model"]["trust_remote_code"],
         attn_implementation="flash_attention_2",
     )
+    if cfg["model"].get("offload_folder"):
+        model_kwargs["offload_folder"] = cfg["model"]["offload_folder"]
     if cfg["model"].get("load_in_4bit"):
         from transformers import BitsAndBytesConfig
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
