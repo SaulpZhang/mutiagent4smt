@@ -137,7 +137,7 @@ def main():
     # 4. LoRA
     lc = cfg["lora"]
     print("配置 4bit training...")
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
+    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
 
     print("配置 LoRA...")
     lora_config = LoraConfig(
