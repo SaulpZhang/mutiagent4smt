@@ -114,7 +114,7 @@ def main():
     model_kwargs = dict(
         device_map=cfg["model"]["device_map"],
         trust_remote_code=cfg["model"]["trust_remote_code"],
-        attn_implementation="flash_attention_2",
+        attn_implementation="sdpa",
     )
     if cfg["model"].get("offload_folder"):
         model_kwargs["offload_folder"] = cfg["model"]["offload_folder"]
