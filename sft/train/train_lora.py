@@ -10,6 +10,7 @@ import random
 import sys
 from pathlib import Path
 
+import gc
 import torch
 import wandb
 import yaml
@@ -206,6 +207,7 @@ def main():
         per_device_eval_batch_size=tc["batch_size"],
         gradient_accumulation_steps=tc["grad_accumulation_steps"],
         gradient_checkpointing=tc["gradient_checkpointing"],
+        gradient_checkpointing_kwargs={"use_reentrant": True},
         bf16=tc["bf16"],
         optim=tc["optim"],
         learning_rate=float(tc["learning_rate"]),
@@ -237,8 +239,8 @@ def main():
         def on_step_end(self, args, state, control, **kwargs):
             # 每 10 步清理缓存防碎片
             if state.global_step % 10 == 0:
+                gc.collect()
                 torch.cuda.empty_cache()
-                print(f"  [step {state.global_step}] 清理 CUDA 缓存")
             if test_eval_interval and state.global_step % test_eval_interval == 0 and state.global_step > 0:
                 m = trainer.evaluate(test_dataset)
                 wandb.log({"test/loss": m.get("eval_loss")}, step=state.global_step)
