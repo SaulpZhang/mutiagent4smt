@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 from peft import PeftModel
-from transformers import AutoModelForVision2Seq, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer
 
 BASE_MODEL = "Qwen/Qwen3.5-9B"
 LORA_PATH = Path(__file__).parent / "output"  # LoRA adapter 目录
@@ -23,7 +23,7 @@ def merge(lora_folder: str):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"加载基座模型: {BASE_MODEL}")
-    model = AutoModelForVision2Seq.from_pretrained(
+    model = AutoModel.from_pretrained(
         BASE_MODEL,
         torch_dtype=torch.bfloat16,
         device_map="auto",
