@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""LoRA 微调 Qwen3.5-9B
+"""LoRA 微调 Qwen3.5-9B"""
 
-从 YAML 读取配置，训练模型学会正确调用工具生成 SMT 代码。
-"""
-
+import gc
 import json
 import os
 import random
 import sys
+from datetime import datetime
 from pathlib import Path
 
-import gc
 import torch
 import wandb
 import yaml
@@ -39,9 +37,7 @@ def load_traces(data_dir: Path) -> list[dict]:
         try:
             data = json.loads(fpath.read_text())
             msgs = data.get("messages", [])
-            if not msgs:
-                continue
-            if not any(m.get("tool_calls") for m in msgs):
+            if not msgs or not any(m.get("tool_calls") for m in msgs):
                 continue
             samples.append({"messages": msgs})
         except Exception:
@@ -49,7 +45,7 @@ def load_traces(data_dir: Path) -> list[dict]:
     return samples
 
 
-def split_data(samples: list[dict], ratios: tuple[float, float, float]):
+def split_data(samples: list[dict], ratios: tuple):
     random.shuffle(samples)
     n = len(samples)
     n1 = int(n * ratios[0])
@@ -60,36 +56,28 @@ def split_data(samples: list[dict], ratios: tuple[float, float, float]):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="config.yaml",
-                        help="配置文件路径，相对于 sft/train/ 目录")
+    parser.add_argument("--config", type=str, default="config.yaml")
     args = parser.parse_args()
 
     config_path = BASE_DIR / args.config
-    if not config_path.exists():
-        print(f"配置文件不存在: {config_path}")
-        sys.exit(1)
-
     cfg = load_config(str(config_path))
-    from datetime import datetime
-    run_name = cfg["wandb"]["run_name"] or datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = BASE_DIR / cfg["output"]["dir"] / run_name
-    output_dir.mkdir(parents=True, exist_ok=True)
 
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     os.environ["WANDB_PROJECT"] = cfg["wandb"]["project"]
     if cfg["wandb"].get("entity"):
         os.environ["WANDB_ENTITY"] = cfg["wandb"]["entity"]
 
-    # 限制 CUDA 显存上限，防止缓存预留占用过多
-    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
-    # 固定随机种子
     seed = cfg.get("seed", 42)
     random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-    # 1. 数据
+    run_name = cfg["wandb"]["run_name"] or datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = BASE_DIR / cfg["output"]["dir"] / run_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. Data
     data_dir = BASE_DIR / cfg["data"]["path"]
     print(f"加载数据: {data_dir}")
     samples = load_traces(data_dir)
@@ -101,15 +89,11 @@ def main():
     # 2. Tokenizer
     model_name = cfg["model"]["name"]
     print(f"加载 tokenizer: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name,
-        trust_remote_code=cfg["model"]["trust_remote_code"],
-        padding_side="right",
-    )
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, padding_side="right")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # 3. 模型
+    # 3. Model
     print(f"加载模型: {model_name}")
     model_kwargs = dict(
         device_map=cfg["model"]["device_map"],
@@ -121,9 +105,7 @@ def main():
     if cfg["model"].get("load_in_4bit"):
         from transformers import BitsAndBytesConfig
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4",
+            load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type="nf4",
         )
         model_kwargs["torch_dtype"] = torch.bfloat16
     else:
@@ -138,74 +120,54 @@ def main():
     lc = cfg["lora"]
     print("配置 4bit training...")
     model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-
     print("配置 LoRA...")
     lora_config = LoraConfig(
-        r=lc["r"],
-        lora_alpha=lc["alpha"],
-        target_modules=lc["target_modules"],
-        lora_dropout=lc["dropout"],
-        bias=lc["bias"],
-        task_type="CAUSAL_LM",
+        r=lc["r"], lora_alpha=lc["alpha"], target_modules=lc["target_modules"],
+        lora_dropout=lc["dropout"], bias=lc["bias"], task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     if torch.cuda.is_available():
         print(f"  LoRA配置后显存: {torch.cuda.memory_allocated()/1e9:.1f} GB")
 
-    # 5. 数据处理（mask 非 assistant 部分的 label）
+    # 5. Data processing with label masking
     def tokenize_fn(examples):
-        all_input_ids = []
-        all_labels = []
+        all_ids, all_labels = [], []
         for msgs in examples["messages"]:
             text = tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=False)
             encoded = tokenizer(text, truncation=True, max_length=cfg["model"]["max_length"])
-            input_ids = encoded["input_ids"]
-            labels = [-100] * len(input_ids)
-
-            # 定位 assistant 回复的 token 范围，保留其 label
-            assistant_token = "<|im_start|>assistant"
-            assistant_ids = tokenizer.encode(assistant_token, add_special_tokens=False)
-            as_len = len(assistant_ids)
-
-            # 从后往前找每个 assistant 回复
+            ids = encoded["input_ids"]
+            labels = [-100] * len(ids)
+            as_tok = "<|im_start|>assistant"
+            as_ids = tokenizer.encode(as_tok, add_special_tokens=False)
+            as_len = len(as_ids)
             pos = 0
             while True:
-                # 找 assistant token 序列
                 start = -1
-                for i in range(pos, len(input_ids) - as_len + 1):
-                    if input_ids[i:i+as_len] == assistant_ids:
+                for i in range(pos, len(ids) - as_len + 1):
+                    if ids[i:i+as_len] == as_ids:
                         start = i
                         break
                 if start == -1:
                     break
-                # assistant 回复从 <|im_start|>assistant 开始到下一个 <|im_start|> 或结尾
-                end = len(input_ids)
-                for i in range(start + as_len, len(input_ids)):
-                    if input_ids[i] == tokenizer.encode("<|im_start|>", add_special_tokens=False)[0]:
+                end = len(ids)
+                im_start_id = tokenizer.encode("<|im_start|>", add_special_tokens=False)[0]
+                for i in range(start + as_len, len(ids)):
+                    if ids[i] == im_start_id:
                         end = i
                         break
-                # 保留 assistant 回复部分的 label（从 assistant token 开始）
                 for i in range(start, end):
-                    labels[i] = input_ids[i]
+                    labels[i] = ids[i]
                 pos = end
-
-            all_input_ids.append(input_ids)
+            all_ids.append(ids)
             all_labels.append(labels)
+        return {"input_ids": all_ids, "labels": all_labels, "attention_mask": [[1] * len(ids) for ids in all_ids]}
 
-        return {"input_ids": all_input_ids, "labels": all_labels, "attention_mask": [[1]*len(ids) for ids in all_input_ids]}
+    train_dataset = Dataset.from_list(train_data).map(tokenize_fn, batched=True, remove_columns=["messages"])
+    valid_dataset = Dataset.from_list(valid_data).map(tokenize_fn, batched=True, remove_columns=["messages"])
+    test_dataset = Dataset.from_list(test_data).map(tokenize_fn, batched=True, remove_columns=["messages"])
 
-    train_dataset = Dataset.from_list(train_data).map(
-        tokenize_fn, batched=True, remove_columns=["messages"]
-    )
-    valid_dataset = Dataset.from_list(valid_data).map(
-        tokenize_fn, batched=True, remove_columns=["messages"]
-    )
-    test_dataset = Dataset.from_list(test_data).map(
-        tokenize_fn, batched=True, remove_columns=["messages"]
-    )
-
-    # 6. 训练参数
+    # 6. Training args
     tc = cfg["training"]
     training_args = TrainingArguments(
         output_dir=str(output_dir),
@@ -224,6 +186,7 @@ def main():
         logging_steps=tc["logging_steps"],
         eval_strategy="steps",
         eval_steps=tc["eval_steps"],
+        group_by_length=tc.get("group_by_length", False),
         save_strategy="steps",
         save_steps=tc["save_steps"],
         save_total_limit=tc["save_total_limit"],
@@ -233,51 +196,41 @@ def main():
         dataloader_num_workers=tc["dataloader_workers"],
     )
 
-    data_collator = DataCollatorForSeq2Seq(
-        tokenizer=tokenizer,
-        padding=True,
-        max_length=cfg["model"]["max_length"],
-    )
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, max_length=cfg["model"]["max_length"])
 
-    # 7. Test evaluation callback
     test_eval_interval = tc.get("test_eval_steps", 0)
 
     class TestEvalCallback(TrainerCallback):
         def on_step_begin(self, args, state, control, **kwargs):
-            if state.global_step % 1 == 0:
+            if state.global_step <= 20 or state.global_step % 50 == 0:
                 a = torch.cuda.memory_allocated() / 1e9
                 r = torch.cuda.memory_reserved() / 1e9
                 print(f"  [step {state.global_step:>4d}] alloc={a:.1f}GB | reserved={r:.1f}GB")
+            gc.collect()
+            torch.cuda.empty_cache()
 
         def on_step_end(self, args, state, control, **kwargs):
-            if state.global_step <= 5 or state.global_step % 10 == 0:
-                gc.collect()
-                torch.cuda.empty_cache()
             if test_eval_interval and state.global_step % test_eval_interval == 0 and state.global_step > 0:
                 m = trainer.evaluate(test_dataset)
                 wandb.log({"test/loss": m.get("eval_loss")}, step=state.global_step)
                 print(f"  [step {state.global_step}] test_loss: {m.get('eval_loss', 'N/A')}")
 
-    # 8. Trainer
     trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
+        model=model, args=training_args,
+        train_dataset=train_dataset, eval_dataset=valid_dataset,
         data_collator=data_collator,
         callbacks=[TestEvalCallback()] if test_eval_interval else None,
     )
 
-    # 8. 训练
+    if torch.cuda.is_available():
+        print(f"  训练前显存: {torch.cuda.memory_allocated()/1e9:.1f} GB")
     print("\n开始训练...")
     trainer.train()
 
-    # 9. 保存
     adapter_dir = output_dir / "lora_adapter"
     model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
     print(f"LoRA adapter 保存到: {adapter_dir}")
-
     print(f"\n完成! 结果: {output_dir}")
     wandb.finish()
 
