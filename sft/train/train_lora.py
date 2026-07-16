@@ -186,7 +186,6 @@ def main():
         logging_steps=tc["logging_steps"],
         eval_strategy="steps",
         eval_steps=tc["eval_steps"],
-        group_by_length=tc.get("group_by_length", False),
         save_strategy="steps",
         save_steps=tc["save_steps"],
         save_total_limit=tc["save_total_limit"],
