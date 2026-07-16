@@ -82,7 +82,7 @@ def main():
     # 限制 CUDA 显存上限，防止缓存预留占用过多
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True,max_split_size_mb:128")
     if torch.cuda.is_available():
-        torch.cuda.set_per_process_memory_fraction(0.65)  # 47GB × 0.65 ≈ 30GB
+        torch.cuda.set_per_process_memory_fraction(0.80)  # 47GB × 0.65 ≈ 30GB
         print(f"  显存上限: {torch.cuda.get_device_properties(0).total_memory * 0.65 / 1e9:.0f}GB")
 
     # 固定随机种子
