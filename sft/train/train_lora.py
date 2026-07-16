@@ -13,7 +13,7 @@ import torch
 import wandb
 import yaml
 from datasets import Dataset
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -118,8 +118,6 @@ def main():
 
     # 4. LoRA
     lc = cfg["lora"]
-    print("配置 4bit training...")
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
     print("配置 LoRA...")
     lora_config = LoraConfig(
         r=lc["r"], lora_alpha=lc["alpha"], target_modules=lc["target_modules"],
