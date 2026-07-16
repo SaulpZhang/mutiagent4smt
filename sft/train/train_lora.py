@@ -134,6 +134,9 @@ def main():
 
     # 4. LoRA
     lc = cfg["lora"]
+    print("配置 4bit training...")
+    model = prepare_model_for_kbit_training(model)
+
     print("配置 LoRA...")
     lora_config = LoraConfig(
         r=lc["r"],
@@ -143,13 +146,6 @@ def main():
         bias=lc["bias"],
         task_type="CAUSAL_LM",
     )
-    # 冻结基座模型，只训练 LoRA（节省优化器显存）
-    for param in model.parameters():
-        param.requires_grad = False
-    for name, param in model.named_parameters():
-        if "lora" in name:
-            param.requires_grad = True
-
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
