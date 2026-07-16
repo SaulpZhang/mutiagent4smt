@@ -247,7 +247,7 @@ def main():
 
     class TestEvalCallback(TrainerCallback):
         def on_step_begin(self, args, state, control, **kwargs):
-            if state.global_step <= 10 or state.global_step % 50 == 0:
+            if state.global_step % 1 == 0:
                 a = torch.cuda.memory_allocated() / 1e9
                 r = torch.cuda.memory_reserved() / 1e9
                 print(f"  [step {state.global_step:>4d}] alloc={a:.1f}GB | reserved={r:.1f}GB")
