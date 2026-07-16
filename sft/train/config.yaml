@@ -4,7 +4,7 @@ model:
   torch_dtype: "bfloat16"
   device_map: "auto"
   trust_remote_code: true
-  max_length: 16384
+  max_length: 8192
   load_in_4bit: true
   offload_folder: "/tmp/offload"
 
