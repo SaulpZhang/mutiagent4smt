@@ -235,6 +235,9 @@ def main():
 
     class TestEvalCallback(TrainerCallback):
         def on_step_end(self, args, state, control, **kwargs):
+            # 每 10 步清理缓存防碎片
+            if state.global_step % 10 == 0:
+                torch.cuda.empty_cache()
             if test_eval_interval and state.global_step % test_eval_interval == 0 and state.global_step > 0:
                 m = trainer.evaluate(test_dataset)
                 wandb.log({"test/loss": m.get("eval_loss")}, step=state.global_step)
