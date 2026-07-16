@@ -42,6 +42,16 @@ def merge(lora_folder: str):
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     tokenizer.save_pretrained(str(out_dir))
 
+    # 修正 config.json 以兼容 vLLM
+    import json
+    config_path = out_dir / "config.json"
+    if config_path.exists():
+        config = json.loads(config_path.read_text())
+        config["model_type"] = "qwen3_5"
+        config["architectures"] = ["Qwen3_5ForCausalLM"]
+        config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False))
+        print(f"config.json 已修正: model_type=qwen3_5, architectures=Qwen3_5ForCausalLM")
+
     print(f"完成! 合并后的模型在: {out_dir}")
 
 
