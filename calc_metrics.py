@@ -81,9 +81,11 @@ def fmt(r, name):
     if r is None:
         return "  {:35s}  无数据".format(name)
     return ("  {:35s}  PASS@1={:5.1f}%  Prec={:5.1f}%  Rec={:5.1f}%  F1={:5.1f}%  "
-            "Align={:5.1f}%  V&P={:5.1f}%  avg={:5.0f}s  max={:5.0f}s  min={:5.0f}s  total={:.1f}h").format(
+            "Align={:5.1f}%  V&P={:5.1f}%  CM=[TP={:3d} FP={:3d} TN={:3d} FN={:3d}]  avg={:5.0f}s  total={:.1f}h").format(
         name, r["pass1"], r["precision"], r["recall"], r["f1"],
-        r["sat_rate"], r["valid_pass"], r["avg_time"], r["max_time"], r["min_time"], r["total_time"])
+        r["sat_rate"], r["valid_pass"],
+        r["tp"], r["fp"], r["tn"], r["fn"],
+        r["avg_time"], r["total_time"])
 
 
 def main():
@@ -103,7 +105,7 @@ def main():
         ("remote_data/lora/qwen_lora_full_v2/data/experiments.db", "qwen_lora_full_v2", "Qwen3.5-4B(Proposed-lora)"),
     ]
 
-    print(f"{'Name':35s}  PASS@1      Precision   Recall      F1          Align       V&P         avg_time    max_time    min_time    total")
+    print(f"{'Name':35s}  PASS@1      Precision   Recall      F1          Align       V&P         Confusion Matrix                    avg_time    total")
     print("-" * 130)
     for db_path, run_id, name in experiments:
         if not Path(db_path).exists():
