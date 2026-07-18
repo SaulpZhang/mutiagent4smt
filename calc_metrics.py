@@ -51,6 +51,14 @@ def calc(db_path, run_id):
 
     sat_match_rate = sat_match / sat_total * 100 if sat_total else 0
 
+    # Valid&Pass: all_satisfied=1 AND label_match=1 / total
+    conn = sqlite3.connect(db_path)
+    vp = conn.execute(
+        "SELECT COUNT(*) FROM experiments WHERE run_id=? AND all_satisfied=1 AND label_match=1", (run_id,)
+    ).fetchone()[0]
+    conn.close()
+    valid_pass = vp / total * 100 if total else 0
+
     pass1 = lm / total * 100 if total else 0
     precision = tp / (tp + fp) * 100 if (tp + fp) else 0
     recall = tp / (tp + fn) * 100 if (tp + fn) else 0
@@ -65,43 +73,44 @@ def calc(db_path, run_id):
             "pass1": pass1, "precision": precision, "recall": recall, "f1": f1,
             "sat_rate": sat_rate, "all_sat_count": all_sat_count,
             "avg_time": avg_t, "max_time": max_t, "min_time": min_t, "total_time": total_t,
-            "sat_match_rate": sat_match_rate, "sat_match": sat_match, "sat_total": sat_total}
+            "sat_match_rate": sat_match_rate, "sat_match": sat_match, "sat_total": sat_total,
+            "valid_pass": valid_pass, "vp": vp, "vp_total": total}
 
 
-def fmt(r, rid):
+def fmt(r, name):
     if r is None:
-        return "  {:25s}  无数据".format(rid)
-    return ("  {:25s}  PASS@1={:5.1f}%  Prec={:5.1f}%  Rec={:5.1f}%  F1={:5.1f}%  "
-            "Sat={:5.1f}%  SatMatch={:3d}/{:3d}  avg={:5.0f}s  max={:5.0f}s  min={:5.0f}s  total={:.1f}h").format(
-        rid, r["pass1"], r["precision"], r["recall"], r["f1"],
-        r["sat_rate"], r["sat_match"], r["sat_total"], r["avg_time"], r["max_time"], r["min_time"], r["total_time"])
+        return "  {:35s}  无数据".format(name)
+    return ("  {:35s}  PASS@1={:5.1f}%  Prec={:5.1f}%  Rec={:5.1f}%  F1={:5.1f}%  "
+            "Align={:5.1f}%  V&P={:5.1f}%  avg={:5.0f}s  max={:5.0f}s  min={:5.0f}s  total={:.1f}h").format(
+        name, r["pass1"], r["precision"], r["recall"], r["f1"],
+        r["sat_rate"], r["valid_pass"], r["avg_time"], r["max_time"], r["min_time"], r["total_time"])
 
 
 def main():
     experiments = [
-        ("data/experiments.db", "exp_full_v2"),
-        ("data/experiments.db", "exp_no_eval"),
-        ("data/experiments.db", "exp_gen_only"),
-        ("data/experiments.db", "full_v21"),
-        ("data/experiments.db", "ablation_no_eval_v1"),
-        ("data/experiments.db", "ablation_gen_only_v1"),
-        ("data/experiments.db", "full_qwen"),
-        ("data/experiments.db", "no_eval_qwen"),
-        ("data/experiments.db", "gen_only_qwen"),
-        ("remote_data/baseline/experiments.db", "qwen_full_v1"),
-        ("remote_data/baseline/experiments.db", "qwen_full_v2"),
-        ("remote_data/lora/qwen_lora_full_v1/data/experiments.db", "qwen_lora_full_v1"),
-        ("remote_data/lora/qwen_lora_full_v2/data/experiments.db", "qwen_lora_full_v2"),
+        ("data/experiments.db", "exp_full_v2", "DeepSeek（Proposed）"),
+        ("data/experiments.db", "exp_no_eval", "DeepSeek（Eval-free）"),
+        ("data/experiments.db", "exp_gen_only", "DeepSeek（Gen-only）"),
+        ("data/experiments.db", "full_v21", "DeepSeek-DSpark(Proposed)"),
+        ("data/experiments.db", "ablation_no_eval_v1", "DeepSeek-DSpark(Eval-free)"),
+        ("data/experiments.db", "ablation_gen_only_v1", "DeepSeek-DSpark(Gen-only)"),
+        ("data/experiments.db", "full_qwen", "Qwen2.5-Coder-32B-Instruct(Proposed)"),
+        ("data/experiments.db", "no_eval_qwen", "Qwen2.5-Coder-32B-Instruct(Eval-free)"),
+        ("data/experiments.db", "gen_only_qwen", "Qwen2.5-Coder-32B-Instruct(Gen-only)"),
+        ("remote_data/baseline/experiments.db", "qwen_full_v1", "Qwen3.5-9B(Proposed)"),
+        ("remote_data/baseline/experiments.db", "qwen_full_v2", "Qwen3.5-4B(Proposed)"),
+        ("remote_data/lora/qwen_lora_full_v1/data/experiments.db", "qwen_lora_full_v1", "Qwen3.5-9B(Proposed-lora)"),
+        ("remote_data/lora/qwen_lora_full_v2/data/experiments.db", "qwen_lora_full_v2", "Qwen3.5-4B(Proposed-lora)"),
     ]
 
-    print(f"{'Run ID':25s}  PASS@1      Precision   Recall      F1          Sat         SatMatch    avg_time    max_time    min_time    total")
-    print("-" * 120)
-    for db_path, run_id in experiments:
+    print(f"{'Name':35s}  PASS@1      Precision   Recall      F1          Align       V&P         avg_time    max_time    min_time    total")
+    print("-" * 130)
+    for db_path, run_id, name in experiments:
         if not Path(db_path).exists():
-            print(f"  {run_id:25s}  DB不存在: {db_path}")
+            print(f"  {name:35s}  DB不存在: {db_path}")
             continue
         r = calc(db_path, run_id)
-        print(fmt(r, run_id))
+        print(fmt(r, name))
 
 
 if __name__ == "__main__":
